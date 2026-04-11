@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Side Tabs",
+  "version": "0.1.0",
+  "description": "AI-powered tab manager in Chrome side panel",
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "sidePanel",
+    "commands",
+    "alarms",
+    "favicon"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src * data: blob:;"
+  },
+  "action": {
+    "default_title": "Side Tabs"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "toggle-command-palette": {
+      "suggested_key": {
+        "default": "Ctrl+K",
+        "mac": "Command+K"
+      },
+      "description": "Open command palette"
+    }
+  },
+  "icons": {
+    "16": "public/icons/icon16.png",
+    "32": "public/icons/icon32.png",
+    "48": "public/icons/icon48.png",
+    "128": "public/icons/icon128.png"
+  }
+}
