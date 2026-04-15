@@ -25,6 +25,11 @@ export default function App() {
   const [groups, setGroups] = useState<VirtualGroup[]>([])
   const [grouping, setGrouping] = useState(false)
   const [mouseY, setMouseY] = useState<number | null>(null)
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light')
+  }, [theme])
 
   const refreshTabs = useCallback(async () => {
     try {
@@ -203,26 +208,21 @@ export default function App() {
     : tabs
 
   return (
-    <div className="flex flex-col h-screen bg-[#1c1c1c] text-[#e0e0e0] select-none">
+    <div className="flex flex-col h-screen select-none" style={{ background: 'var(--t-bg)', color: 'var(--t-text)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-2 h-10 shrink-0 border-b border-[#333]">
+      <div className="flex items-center justify-between px-3 h-11 shrink-0" style={{ borderBottom: '1px solid var(--t-border)' }}>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => window.close()}
-            className="p-1.5 rounded hover:bg-[#333] transition-colors"
-            title="关闭侧边栏"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
-            </svg>
-          </button>
-          <span className="text-xs text-[#888]">{tabs.length} 个标签</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--t-text)' }}>标签</span>
+          <span className="text-xs px-1.5 py-0.5 rounded-full text-[10px] font-medium" style={{ background: 'var(--t-bg-active)', color: 'var(--t-text-muted)' }}>{tabs.length}</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <button
             onClick={groupTabs}
             disabled={grouping}
-            className={`p-1.5 rounded transition-colors ${grouping ? 'animate-pulse text-[#6366f1]' : 'hover:bg-[#333]'}`}
+            className="p-1.5 rounded transition-colors"
+            style={{ color: grouping ? '#6366f1' : 'var(--t-text-muted)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}
             title="AI 整理"
           >
             {grouping ? (
@@ -238,24 +238,45 @@ export default function App() {
           </button>
           <button
             onClick={() => { setSearchOpen(true); setSearchQuery('') }}
-            className="p-1.5 rounded hover:bg-[#333] transition-colors"
+            className="p-1.5 rounded transition-colors"
+            style={{ color: 'var(--t-text-muted)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}
             title="搜索 (⌘K)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
             </svg>
           </button>
+          <button
+            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+            className="p-1.5 rounded transition-colors"
+            style={{ color: 'var(--t-text-muted)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}
+            title={theme === 'dark' ? '切换浅色' : '切换深色'}
+          >
+            {theme === 'dark' ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
       {/* Tab List */}
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden py-0.5"
+        className="flex-1 overflow-y-auto overflow-x-hidden py-1"
         onMouseMove={e => setMouseY(e.clientY)}
         onMouseLeave={() => setMouseY(null)}
       >
         {loading && (
-          <div className="flex items-center justify-center h-20 text-[#666] text-xs">加载中...</div>
+          <div className="flex items-center justify-center h-20 text-xs" style={{ color: 'var(--t-text-muted)' }}>加载中...</div>
         )}
 
         {!loading && error && (
@@ -288,31 +309,34 @@ export default function App() {
         )}
 
         {!loading && !error && tabs.length === 0 && (
-          <div className="flex items-center justify-center h-20 text-[#666] text-xs">没有打开的标签</div>
+          <div className="flex items-center justify-center h-20 text-xs" style={{ color: 'var(--t-text-muted)' }}>没有打开的标签</div>
         )}
       </div>
 
       {/* New Tab button */}
-      <div className="shrink-0 border-t border-[#333] px-1 py-1">
+      <div className="shrink-0 px-2 py-2" style={{ borderTop: '1px solid var(--t-border)' }}>
         <button
           onClick={() => chrome.tabs.create({ url: 'chrome://newtab' })}
-          className="flex items-center gap-2 w-full px-3 py-1.5 rounded text-xs text-[#999] hover:bg-[#333] transition-colors"
+          className="flex items-center justify-center gap-2 w-full py-1.5 rounded text-xs transition-colors"
+          style={{ color: 'var(--t-text-muted)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+          onMouseLeave={e => (e.currentTarget.style.background = '')}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          新标签
+          新建标签页
         </button>
       </div>
 
       {/* AI Grouping loading overlay */}
       {grouping && (
-        <div className="absolute inset-0 z-40 bg-[#1c1c1c]/80 flex flex-col items-center justify-center gap-3 backdrop-blur-sm">
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 backdrop-blur-sm" style={{ background: 'var(--t-bg)' + 'cc' }}>
           <div className="relative w-10 h-10">
-            <div className="absolute inset-0 rounded-full border-2 border-[#333]" />
+            <div className="absolute inset-0 rounded-full border-2" style={{ borderColor: 'var(--t-border)' }} />
             <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#6366f1] animate-spin" />
           </div>
-          <span className="text-xs text-[#999]">正在拼命整理中...</span>
+          <span className="text-xs" style={{ color: 'var(--t-text-muted)' }}>正在拼命整理中...</span>
         </div>
       )}
 
@@ -354,21 +378,15 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
     return distance < radius ? 1 + maxScale * (1 - distance / radius) : 1
   }, [mouseY])
 
-  const accentBg = groupAccent
-    ? hovered
-      ? `${groupAccent}26`  // 15% opacity on hover
-      : tab.active
-        ? `${groupAccent}33`  // 20% opacity when active
-        : `${groupAccent}0f`  // 6% opacity default
-    : undefined
+  const bgColor = tab.active
+    ? 'var(--t-bg-active)'
+    : hovered ? 'var(--t-bg-hover)' : 'transparent'
 
   return (
     <div
       ref={rowRef}
-      className={`group relative flex items-center gap-2 mx-1 my-[1px] px-2 py-[6px] rounded cursor-pointer transition-colors duration-100 ${
-        tab.discarded ? 'opacity-40' : ''
-      }`}
-      style={{ backgroundColor: accentBg ?? (tab.active ? '#2d2d2d' : undefined), color: tab.active ? 'white' : '#ccc' }}
+      className={`group relative flex items-center gap-2 px-3 rounded cursor-pointer ${tab.discarded ? 'opacity-40' : ''}`}
+      style={{ backgroundColor: bgColor, minHeight: '32px', paddingTop: '5px', paddingBottom: '5px' }}
       onClick={onActivate}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setMenuOpen(false) }}
@@ -376,19 +394,19 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
       {/* Left accent bar for active tab */}
       {tab.active && (
         <div
-          className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r"
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r"
           style={{ backgroundColor: groupAccent ?? '#6366f1' }}
         />
       )}
 
       {/* Favicon / Close button */}
-      <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+      <div className="w-4 h-4 shrink-0 flex items-center justify-center">
         {hovered ? (
           <button
             onClick={e => { e.stopPropagation(); onClose() }}
-            className="w-5 h-5 flex items-center justify-center rounded bg-red-500 hover:bg-red-600"
+            className="w-4 h-4 flex items-center justify-center rounded bg-red-500 hover:bg-red-600"
           >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -400,7 +418,7 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
           />
         ) : (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t-text-faint)" strokeWidth="1.5">
             <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z" />
           </svg>
         )}
@@ -409,7 +427,7 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
       {/* Title */}
       <div className="flex-1 min-w-0">
         <div
-          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', display: 'inline-block', maxWidth: '100%', color: groupAccent && !tab.active ? groupAccent + 'cc' : undefined }}
+          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', display: 'inline-block', maxWidth: '100%', color: tab.active ? 'var(--t-text)' : 'var(--t-text-secondary)' }}
           className={`text-[12px] leading-tight truncate ${tab.pinned ? 'font-medium' : ''}`}
         >
           {tab.title || tab.url || '新标签'}
@@ -421,12 +439,14 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
         )}
       </div>
 
-
       {/* Context menu trigger */}
       {hovered && (
         <button
           onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
-          className="p-0.5 rounded shrink-0 opacity-0 group-hover:opacity-100 hover:bg-[#444] transition-opacity"
+          className="p-0.5 rounded shrink-0"
+          style={{ color: 'var(--t-text-faint)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-active)')}
+          onMouseLeave={e => (e.currentTarget.style.background = '')}
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
@@ -436,22 +456,30 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
 
       {/* Context menu */}
       {menuOpen && (
-        <div className="absolute right-1 top-full z-50 mt-1 py-1 rounded bg-[#2d2d2d] border border-[#444] shadow-xl min-w-[120px]">
+        <div className="absolute right-1 top-full z-50 mt-1 py-1 rounded shadow-xl min-w-[120px]" style={{ background: 'var(--t-bg-active)', border: '1px solid var(--t-border)' }}>
           <button
             onClick={e => { e.stopPropagation(); onPin(); setMenuOpen(false) }}
-            className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#3a3a3a]"
+            className="w-full text-left px-3 py-1.5 text-[11px]"
+            style={{ color: 'var(--t-text-secondary)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}
           >
             {tab.pinned ? '取消固定' : '固定标签'}
           </button>
           <button
             onClick={e => { e.stopPropagation(); onCloseOthers(); setMenuOpen(false) }}
-            className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#3a3a3a]"
+            className="w-full text-left px-3 py-1.5 text-[11px]"
+            style={{ color: 'var(--t-text-secondary)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}
           >
             关闭其他标签
           </button>
           <button
             onClick={e => { e.stopPropagation(); onClose(); setMenuOpen(false) }}
-            className="w-full text-left px-3 py-1.5 text-[11px] text-red-400 hover:bg-[#3a3a3a]"
+            className="w-full text-left px-3 py-1.5 text-[11px] text-red-400"
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}
           >
             关闭标签
           </button>
@@ -502,27 +530,31 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
         const accent = GROUP_ACCENT[group.color] ?? GROUP_ACCENT.blue
 
         return (
-          <div key={group.id} className="mb-1">
-            {/* Group header — bold, larger, colored accent */}
+          <div key={group.id} className="mb-3">
+            {/* Group header */}
             <button
               onClick={() => toggleGroup(group.id)}
-              className="flex items-center gap-2 w-full px-3 py-[6px] text-left hover:bg-[#282828] transition-colors"
+              className="flex items-center gap-2 w-full px-3 py-2 text-left rounded transition-colors"
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+              onMouseLeave={e => (e.currentTarget.style.background = '')}
             >
-              <svg
-                width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2.5"
-                className={`transition-transform shrink-0 ${group.collapsed ? '' : 'rotate-90'}`}
-              >
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              <span className="text-[13px] font-semibold truncate flex-1" style={{ color: accent }}>
+              {/* Colored dot */}
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+              <span className="text-[13px] font-semibold truncate flex-1" style={{ color: 'var(--t-text)' }}>
                 {group.title}
               </span>
-              <span className="text-[10px] text-[#555] tabular-nums">{groupTabs.length}</span>
+              <span className="text-[11px] tabular-nums mr-1" style={{ color: 'var(--t-text-muted)' }}>{groupTabs.length}</span>
+              <svg
+                width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t-text-faint)" strokeWidth="2.5"
+                className={`transition-transform shrink-0 ${group.collapsed ? '-rotate-90' : ''}`}
+              >
+                <path d="M18 15l-6-6-6 6" />
+              </svg>
             </button>
 
-            {/* Group tabs — indented under group header */}
+            {/* Group tabs — indented with left color border */}
             {!group.collapsed && (
-              <div className="pl-4">
+              <div className="ml-3 pl-2" style={{ borderLeft: `2px solid ${accent}33` }}>
                 {groupTabs.map(tab => (
                   <TabRow
                     key={tab.id}
@@ -544,10 +576,10 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
       {/* Ungrouped tabs */}
       {ungroupedTabs.length > 0 && groups.length > 0 && (
         <>
-          <div className="flex items-center gap-2 mx-2 mt-1 mb-0.5">
-            <div className="h-px flex-1 bg-[#333]" />
-            <span className="text-[10px] text-[#555]">其他 ({ungroupedTabs.length})</span>
-            <div className="h-px flex-1 bg-[#333]" />
+          <div className="flex items-center gap-2 mx-3 mt-1 mb-2">
+            <div className="h-px flex-1" style={{ background: 'var(--t-border)' }} />
+            <span className="text-[10px]" style={{ color: 'var(--t-text-faint)' }}>其他 {ungroupedTabs.length}</span>
+            <div className="h-px flex-1" style={{ background: 'var(--t-border)' }} />
           </div>
           {ungroupedTabs.map(tab => (
             <TabRow

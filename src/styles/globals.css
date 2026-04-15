@@ -22,6 +22,31 @@
   --color-group-orange: #f97316;
 }
 
+/* Theme tokens */
+:root {
+  --t-bg: #1c1c1c;
+  --t-bg-hover: #282828;
+  --t-bg-active: #2d2d2d;
+  --t-border: #333;
+  --t-text: #e0e0e0;
+  --t-text-secondary: #ccc;
+  --t-text-muted: #888;
+  --t-text-faint: #555;
+  --t-header-bg: #1c1c1c;
+}
+
+:root.light {
+  --t-bg: #f7f7f8;
+  --t-bg-hover: #efefef;
+  --t-bg-active: #e5e5e5;
+  --t-border: #e0e0e0;
+  --t-text: #1a1a1a;
+  --t-text-secondary: #333;
+  --t-text-muted: #666;
+  --t-text-faint: #aaa;
+  --t-header-bg: #f7f7f8;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   margin: 0;
