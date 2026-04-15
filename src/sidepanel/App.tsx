@@ -57,6 +57,19 @@ export default function App() {
   // Initial load
   useEffect(() => {
     refreshTabs()
+    async function loadGroups() {
+      const win = await chrome.windows.getCurrent()
+      const saved = await storage.groups.get(win.id!)
+      if (saved.length === 0) return
+      // 过滤掉已关闭的标签 id
+      const liveTabs = await chrome.tabs.query({ windowId: win.id })
+      const liveIds = new Set(liveTabs.map(t => t.id))
+      const cleaned = saved
+        .map(g => ({ ...g, tabIds: g.tabIds.filter(id => liveIds.has(id)) }))
+        .filter(g => g.tabIds.length > 0)
+      if (cleaned.length > 0) setGroups(cleaned)
+    }
+    loadGroups()
   }, [refreshTabs])
 
   // AI grouping
@@ -79,6 +92,8 @@ export default function App() {
       // Try AI grouping
       const { data: aiResult, error: aiError } = await groupTabsWithAI(tabInputs, config, true)
 
+      const win = await chrome.windows.getCurrent()
+
       if (!aiResult) {
         const errorMsg = aiError || '未知错误'
         setError(`AI 分组失败: ${errorMsg}`)
@@ -96,6 +111,7 @@ export default function App() {
             createdAt: Date.now(),
           }))
         setGroups(newGroups)
+        await storage.groups.set(win.id!, newGroups)
         return
       }
 
@@ -112,6 +128,7 @@ export default function App() {
         }))
 
       setGroups(newGroups)
+      await storage.groups.set(win.id!, newGroups)
     } catch (err) {
       setError(`分组失败: ${String(err)}`)
     } finally {
