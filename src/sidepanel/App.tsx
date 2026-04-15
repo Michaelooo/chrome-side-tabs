@@ -354,14 +354,21 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
     return distance < radius ? 1 + maxScale * (1 - distance / radius) : 1
   }, [mouseY])
 
+  const accentBg = groupAccent
+    ? hovered
+      ? `${groupAccent}26`  // 15% opacity on hover
+      : tab.active
+        ? `${groupAccent}33`  // 20% opacity when active
+        : `${groupAccent}0f`  // 6% opacity default
+    : undefined
+
   return (
     <div
       ref={rowRef}
       className={`group relative flex items-center gap-2 mx-1 my-[1px] px-2 py-[6px] rounded cursor-pointer transition-colors duration-100 ${
-        tab.active
-          ? 'bg-[#2d2d2d] text-white'
-          : 'text-[#ccc] hover:bg-[#282828]'
-      } ${tab.discarded ? 'opacity-40' : ''}`}
+        tab.discarded ? 'opacity-40' : ''
+      }`}
+      style={{ backgroundColor: accentBg ?? (tab.active ? '#2d2d2d' : undefined), color: tab.active ? 'white' : '#ccc' }}
       onClick={onActivate}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setMenuOpen(false) }}
@@ -402,7 +409,7 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
       {/* Title */}
       <div className="flex-1 min-w-0">
         <div
-          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', display: 'inline-block', maxWidth: '100%' }}
+          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', display: 'inline-block', maxWidth: '100%', color: groupAccent && !tab.active ? groupAccent + 'cc' : undefined }}
           className={`text-[12px] leading-tight truncate ${tab.pinned ? 'font-medium' : ''}`}
         >
           {tab.title || tab.url || '新标签'}
