@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { AppTab, VirtualGroup, GroupColor } from '../types/entities'
 import { groupTabsWithAI, groupTabsByDomain } from '../lib/ai-client'
 import { storage } from '../lib/storage'
@@ -24,6 +24,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [groups, setGroups] = useState<VirtualGroup[]>([])
   const [grouping, setGrouping] = useState(false)
+  const [mouseY, setMouseY] = useState<number | null>(null)
 
   const refreshTabs = useCallback(async () => {
     try {
@@ -62,12 +63,6 @@ export default function App() {
   const groupTabs = useCallback(async () => {
     if (grouping) return
     if (tabs.length < 2) return
-
-    // If already grouped, clear groups
-    if (groups.length > 0) {
-      setGroups([])
-      return
-    }
 
     setGrouping(true)
     setError(null)
@@ -122,7 +117,7 @@ export default function App() {
     } finally {
       setGrouping(false)
     }
-  }, [tabs, groups, grouping])
+  }, [tabs, grouping])
 
   // Listen for tab events to refresh
   useEffect(() => {
@@ -210,8 +205,8 @@ export default function App() {
           <button
             onClick={groupTabs}
             disabled={grouping}
-            className={`p-1.5 rounded transition-colors ${grouping ? 'animate-pulse text-[#6366f1]' : 'hover:bg-[#333]'} ${groups.length > 0 ? 'text-[#6366f1]' : ''}`}
-            title={groups.length > 0 ? '清除分组' : 'AI 分组'}
+            className={`p-1.5 rounded transition-colors ${grouping ? 'animate-pulse text-[#6366f1]' : 'hover:bg-[#333]'}`}
+            title="AI 整理"
           >
             {grouping ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
@@ -237,7 +232,11 @@ export default function App() {
       </div>
 
       {/* Tab List */}
-      <div className="flex-1 overflow-y-auto py-0.5">
+      <div
+        className="flex-1 overflow-y-auto overflow-x-hidden py-0.5"
+        onMouseMove={e => setMouseY(e.clientY)}
+        onMouseLeave={() => setMouseY(null)}
+      >
         {loading && (
           <div className="flex items-center justify-center h-20 text-[#666] text-xs">加载中...</div>
         )}
@@ -254,6 +253,7 @@ export default function App() {
             onClose={() => closeTab(tab.id)}
             onPin={() => pinTab(tab.id)}
             onCloseOthers={() => closeOtherTabs(tab.id)}
+            mouseY={mouseY}
           />
         ))}
 
@@ -266,6 +266,7 @@ export default function App() {
             onClose={closeTab}
             onPin={pinTab}
             onCloseOthers={closeOtherTabs}
+            mouseY={mouseY}
           />
         )}
 
@@ -313,20 +314,33 @@ export default function App() {
 }
 
 // --- Edge-like Tab Row ---
-function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent }: {
+function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, mouseY }: {
   tab: AppTab
   onActivate: () => void
   onClose: () => void
   onPin: () => void
   onCloseOthers: () => void
   groupAccent?: string
+  mouseY?: number | null
 }) {
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  const scale = useMemo(() => {
+    if (mouseY == null || !rowRef.current) return 1
+    const rect = rowRef.current.getBoundingClientRect()
+    const centerY = rect.top + rect.height / 2
+    const distance = Math.abs(mouseY - centerY)
+    const radius = 80
+    const maxScale = 0.25
+    return distance < radius ? 1 + maxScale * (1 - distance / radius) : 1
+  }, [mouseY])
 
   return (
     <div
-      className={`group relative flex items-center gap-2 mx-1 my-[1px] px-2 py-[6px] rounded cursor-pointer transition-all duration-100 ${
+      ref={rowRef}
+      className={`group relative flex items-center gap-2 mx-1 my-[1px] px-2 py-[6px] rounded cursor-pointer transition-colors duration-100 ${
         tab.active
           ? 'bg-[#2d2d2d] text-white'
           : 'text-[#ccc] hover:bg-[#282828]'
@@ -343,9 +357,18 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent }:
         />
       )}
 
-      {/* Favicon */}
-      <div className="w-4 h-4 shrink-0 flex items-center justify-center">
-        {tab.favIconUrl ? (
+      {/* Favicon / Close button */}
+      <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+        {hovered ? (
+          <button
+            onClick={e => { e.stopPropagation(); onClose() }}
+            className="w-5 h-5 flex items-center justify-center rounded bg-red-500 hover:bg-red-600"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        ) : tab.favIconUrl ? (
           <img
             src={tab.favIconUrl}
             alt=""
@@ -361,7 +384,10 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent }:
 
       {/* Title */}
       <div className="flex-1 min-w-0">
-        <div className={`text-[12px] leading-tight truncate ${tab.pinned ? 'font-medium' : ''}`}>
+        <div
+          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', display: 'inline-block', maxWidth: '100%' }}
+          className={`text-[12px] leading-tight truncate ${tab.pinned ? 'font-medium' : ''}`}
+        >
           {tab.title || tab.url || '新标签'}
         </div>
         {tab.audible && (
@@ -371,17 +397,6 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent }:
         )}
       </div>
 
-      {/* Close button */}
-      {(hovered || tab.active) && (
-        <button
-          onClick={e => { e.stopPropagation(); onClose() }}
-          className="p-0.5 rounded shrink-0 opacity-0 group-hover:opacity-100 hover:bg-[#444] transition-opacity"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      )}
 
       {/* Context menu trigger */}
       {hovered && (
@@ -435,7 +450,7 @@ const GROUP_ACCENT: Record<GroupColor, string> = {
 }
 
 // --- Grouped Tab List ---
-function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, onCloseOthers }: {
+function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, onCloseOthers, mouseY }: {
   groups: VirtualGroup[]
   setGroups: React.Dispatch<React.SetStateAction<VirtualGroup[]>>
   tabs: AppTab[]
@@ -443,6 +458,7 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
   onClose: (id: number) => void
   onPin: (id: number) => void
   onCloseOthers: (id: number) => void
+  mouseY?: number | null
 }) {
   const groupedTabIds = new Set(groups.flatMap(g => g.tabIds))
   const ungroupedTabs = tabs.filter(t => !groupedTabIds.has(t.id))
@@ -492,6 +508,7 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
                     onPin={() => onPin(tab.id)}
                     onCloseOthers={() => onCloseOthers(tab.id)}
                     groupAccent={accent}
+                    mouseY={mouseY}
                   />
                 ))}
               </div>
@@ -516,6 +533,7 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
               onClose={() => onClose(tab.id)}
               onPin={() => onPin(tab.id)}
               onCloseOthers={() => onCloseOthers(tab.id)}
+              mouseY={mouseY}
             />
           ))}
         </>
