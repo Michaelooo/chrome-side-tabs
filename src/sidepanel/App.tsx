@@ -26,9 +26,20 @@ export default function App() {
   const [grouping, setGrouping] = useState(false)
   const [mouseY, setMouseY] = useState<number | null>(null)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const themeLoaded = useRef(false)
+
+  useEffect(() => {
+    chrome.storage.local.get('theme').then(({ theme: saved }) => {
+      if (saved === 'light' || saved === 'dark') setTheme(saved)
+      themeLoaded.current = true
+    })
+  }, [])
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light')
+    if (themeLoaded.current) {
+      chrome.storage.local.set({ theme })
+    }
   }, [theme])
 
   const refreshTabs = useCallback(async () => {
@@ -231,8 +242,8 @@ export default function App() {
                 <path d="M12 2a10 10 0 019.8 8" />
               </svg>
             ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M15 4V2" /><path d="M15 16v-2" /><path d="M8 9h2" /><path d="M20 9h2" /><path d="M17.8 11.8L19 13" /><path d="M15 9h0" /><path d="M17.8 6.2L19 5" /><path d="M3 21l9-9" /><path d="M12.2 6.2L11 5" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9.5 2l.5 4 4 .5-4 .5-.5 4-.5-4-4-.5 4-.5z" /><path d="M18 8l.5 2 2 .5-2 .5-.5 2-.5-2-2-.5 2-.5z" /><path d="M13 16l.5 3 3 .5-3 .5-.5 3-.5-3-3-.5 3-.5z" />
               </svg>
             )}
           </button>
@@ -633,10 +644,10 @@ function SearchOverlay({ tabs, query, onQueryChange, onSelect, onClose }: {
   }
 
   return (
-    <div className="absolute inset-0 z-50 bg-black/70 flex items-start justify-center pt-6" onClick={onClose}>
-      <div className="w-[calc(100%-12px)] bg-[#2d2d2d] rounded-lg border border-[#444] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#444]">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2">
+    <div className="absolute inset-0 z-50 bg-black/50 flex items-start justify-center pt-6" onClick={onClose}>
+      <div className="w-[calc(100%-12px)] rounded-lg border shadow-2xl overflow-hidden" style={{ background: 'var(--t-bg-active)', borderColor: 'var(--t-border)' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--t-border)' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t-text-muted)" strokeWidth="2">
             <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
           </svg>
           <input
@@ -645,30 +656,30 @@ function SearchOverlay({ tabs, query, onQueryChange, onSelect, onClose }: {
             onChange={e => { onQueryChange(e.target.value); setSelectedIndex(0) }}
             onKeyDown={handleKeyDown}
             placeholder="搜索标签..."
-            className="flex-1 bg-transparent text-xs focus:outline-none placeholder:text-[#666]"
+            className="flex-1 bg-transparent text-xs focus:outline-none"
+            style={{ color: 'var(--t-text)' }}
           />
-          <kbd className="text-[9px] px-1 py-0.5 rounded bg-[#1c1c1c] text-[#666]">ESC</kbd>
+          <kbd className="text-[9px] px-1 py-0.5 rounded" style={{ background: 'var(--t-bg)', color: 'var(--t-text-muted)' }}>ESC</kbd>
         </div>
         <div className="max-h-60 overflow-y-auto">
           {results.map((tab, i) => (
             <button
               key={tab.id}
-              className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs transition-colors ${
-                i === selectedIndex ? 'bg-[#3a3a3a]' : 'hover:bg-[#333]'
-              }`}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs transition-colors"
+              style={{ background: i === selectedIndex ? 'var(--t-bg-hover)' : undefined, color: 'var(--t-text)' }}
               onClick={() => onSelect(tab.id)}
               onMouseEnter={() => setSelectedIndex(i)}
             >
               {tab.favIconUrl ? (
                 <img src={tab.favIconUrl} alt="" className="w-3.5 h-3.5 shrink-0 rounded-sm" />
               ) : (
-                <div className="w-3.5 h-3.5 shrink-0 rounded-sm bg-[#444]" />
+                <div className="w-3.5 h-3.5 shrink-0 rounded-sm" style={{ background: 'var(--t-border)' }} />
               )}
               <div className="flex-1 min-w-0 truncate">{tab.title || tab.url}</div>
             </button>
           ))}
           {results.length === 0 && (
-            <div className="px-3 py-4 text-center text-[11px] text-[#666]">无匹配结果</div>
+            <div className="px-3 py-4 text-center text-[11px]" style={{ color: 'var(--t-text-muted)' }}>无匹配结果</div>
           )}
         </div>
       </div>
