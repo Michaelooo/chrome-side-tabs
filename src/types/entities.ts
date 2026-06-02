@@ -20,6 +20,8 @@ export interface VirtualGroup {
   title: string
   color: GroupColor
   tabIds: number[]
+  // 成员 URL，用于浏览器重启后标签 id 变化时按 URL 重新认领回原组
+  tabUrls?: string[]
   collapsed: boolean
   source: 'ai' | 'manual' | 'domain'
   createdAt: number
