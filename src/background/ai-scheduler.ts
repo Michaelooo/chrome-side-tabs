@@ -1,6 +1,6 @@
 import { storage } from '../lib/storage'
 import { groupTabsWithAI, groupTabsByDomain } from '../lib/ai-client'
-import { queryTabsInWindow } from '../lib/tab-manager'
+import { queryTabsInWindow, applyGroupsToBrowser } from '../lib/tab-manager'
 import { logger } from '../lib/logger'
 import type { VirtualGroup, AppTab } from '../types/entities'
 import { v4 as uuid } from 'uuid'
@@ -56,6 +56,13 @@ export async function triggerGrouping(windowId: number, force = false): Promise<
     await storage.groups.set(windowId, groups)
     lastRunAt.set(windowId, Date.now())
     logger.info(`Grouped ${tabs.length} tabs into ${groups.length} groups`)
+
+    // 同步到 Chrome 原生标签组，失败不影响主流程
+    try {
+      await applyGroupsToBrowser(windowId, groups)
+    } catch (syncErr) {
+      logger.error('Failed to sync groups to browser:', syncErr)
+    }
 
     // Also update snapshot with new groups
     const snapshot = await storage.tabsSnapshot.get(windowId)

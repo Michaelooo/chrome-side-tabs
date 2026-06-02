@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { AppTab, VirtualGroup, GroupColor } from '../types/entities'
 import { groupTabsWithAI, groupTabsByDomain } from '../lib/ai-client'
 import { storage } from '../lib/storage'
+import { applyGroupsToBrowser } from '../lib/tab-manager'
 
 const GROUP_COLORS: Record<GroupColor, string> = {
   blue: '#4A90D9',
@@ -128,6 +129,11 @@ export default function App() {
           }))
         setGroups(newGroups)
         await storage.groups.set(win.id!, newGroups)
+        try {
+          await applyGroupsToBrowser(win.id!, newGroups)
+        } catch (syncErr) {
+          console.error('Failed to sync groups to browser:', syncErr)
+        }
         return
       }
 
@@ -145,6 +151,11 @@ export default function App() {
 
       setGroups(newGroups)
       await storage.groups.set(win.id!, newGroups)
+      try {
+        await applyGroupsToBrowser(win.id!, newGroups)
+      } catch (syncErr) {
+        console.error('Failed to sync groups to browser:', syncErr)
+      }
     } catch (err) {
       setError(`分组失败: ${String(err)}`)
     } finally {
