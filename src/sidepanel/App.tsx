@@ -15,6 +15,21 @@ const GROUP_COLORS: Record<GroupColor, string> = {
   orange: '#D98A4A',
 }
 
+// 关闭标签的迸发彩蛋粒子：放射状方向与颜色
+const BURST_PARTICLES = [
+  { x: '16px', y: '0px', color: '#f59e0b', size: 5 },
+  { x: '11px', y: '-11px', color: '#ef4444', size: 4 },
+  { x: '0px', y: '-17px', color: '#ec4899', size: 5 },
+  { x: '-11px', y: '-11px', color: '#a855f7', size: 4 },
+  { x: '-16px', y: '0px', color: '#6366f1', size: 5 },
+  { x: '-11px', y: '11px', color: '#22c55e', size: 4 },
+  { x: '0px', y: '17px', color: '#06b6d4', size: 5 },
+  { x: '11px', y: '11px', color: '#eab308', size: 4 },
+  { x: '7px', y: '-5px', color: '#f97316', size: 3 },
+  { x: '-7px', y: '5px', color: '#14b8a6', size: 3 },
+]
+const BURST_MS = 520
+
 // 直接在 App 里查 tabs，不走 service worker 中转
 // 因为 sidepanel 是 extension page，可以直接调 chrome.tabs
 export default function App() {
@@ -401,7 +416,15 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
 }) {
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
+
+  // 先放迸发彩蛋动画，再真正关闭
+  const handleClose = () => {
+    if (closing) return
+    setClosing(true)
+    setTimeout(onClose, BURST_MS)
+  }
 
   const scale = useMemo(() => {
     if (mouseY == null || !rowRef.current) return 1
@@ -420,8 +443,16 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
   return (
     <div
       ref={rowRef}
-      className={`group relative flex items-center gap-2 px-3 rounded cursor-pointer ${tab.discarded ? 'opacity-40' : ''}`}
-      style={{ backgroundColor: bgColor, minHeight: '32px', paddingTop: '5px', paddingBottom: '5px' }}
+      className={`group relative flex items-center gap-2 px-3 rounded cursor-pointer ${tab.discarded && !closing ? 'opacity-40' : ''}`}
+      style={{
+        backgroundColor: bgColor,
+        minHeight: '32px',
+        paddingTop: '5px',
+        paddingBottom: '5px',
+        opacity: closing ? 0 : undefined,
+        transform: closing ? 'translateX(10px)' : undefined,
+        transition: closing ? 'opacity 300ms ease, transform 300ms ease' : undefined,
+      }}
       onClick={onActivate}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setMenuOpen(false) }}
@@ -435,13 +466,33 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
       )}
 
       {/* Favicon / Close button */}
-      <div className="w-4 h-4 shrink-0 flex items-center justify-center">
-        {hovered ? (
+      <div className="relative w-4 h-4 shrink-0 flex items-center justify-center">
+        {closing ? (
+          BURST_PARTICLES.map((p, i) => (
+            <span
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                width: p.size,
+                height: p.size,
+                background: p.color,
+                boxShadow: `0 0 4px ${p.color}`,
+                ['--bx' as string]: p.x,
+                ['--by' as string]: p.y,
+                animation: `tab-burst ${BURST_MS}ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards`,
+              } as React.CSSProperties}
+            />
+          ))
+        ) : hovered ? (
           <button
-            onClick={e => { e.stopPropagation(); onClose() }}
-            className="w-4 h-4 flex items-center justify-center rounded bg-red-500 hover:bg-red-600"
+            onClick={e => { e.stopPropagation(); handleClose() }}
+            className="w-4 h-4 flex items-center justify-center rounded-full cursor-pointer transition-colors"
+            style={{ color: 'var(--t-text-muted)' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; e.currentTarget.style.color = '#ef4444' }}
+            onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--t-text-muted)' }}
+            title="关闭标签"
           >
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -511,7 +562,7 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
             关闭其他标签
           </button>
           <button
-            onClick={e => { e.stopPropagation(); onClose(); setMenuOpen(false) }}
+            onClick={e => { e.stopPropagation(); setMenuOpen(false); handleClose() }}
             className="w-full text-left px-3 py-1.5 text-[11px] text-red-400"
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
             onMouseLeave={e => (e.currentTarget.style.background = '')}
