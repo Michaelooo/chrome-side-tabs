@@ -48,6 +48,7 @@ export async function triggerGrouping(windowId: number, force = false): Promise<
         ? g.color
         : 'blue') as VirtualGroup['color'],
       tabIds: g.indices.map((i: number) => tabs[i]?.id).filter((id: number | undefined): id is number => id !== undefined),
+      tabUrls: g.indices.map((i: number) => tabs[i]?.url).filter((u: string | undefined): u is string => !!u),
       collapsed: false,
       source: 'ai' as const,
       createdAt: Date.now(),

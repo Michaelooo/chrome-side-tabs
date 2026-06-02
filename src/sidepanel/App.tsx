@@ -93,13 +93,31 @@ export default function App() {
       const win = await chrome.windows.getCurrent()
       const saved = await storage.groups.get(win.id!)
       if (saved.length === 0) return
-      // 过滤掉已关闭的标签 id
+      // 重连分组成员：先按 id 保留存活标签，再按 URL 认领重启后换了 id 的标签
       const liveTabs = await chrome.tabs.query({ windowId: win.id })
       const liveIds = new Set(liveTabs.map(t => t.id))
+      const claimed = new Set<number>()
       const cleaned = saved
-        .map(g => ({ ...g, tabIds: g.tabIds.filter(id => liveIds.has(id)) }))
+        .map(g => {
+          const ids: number[] = []
+          for (const id of g.tabIds) {
+            if (liveIds.has(id) && !claimed.has(id)) { ids.push(id); claimed.add(id) }
+          }
+          if (g.tabUrls?.length) {
+            const urlSet = new Set(g.tabUrls)
+            for (const t of liveTabs) {
+              if (t.id != null && !claimed.has(t.id) && t.url && urlSet.has(t.url)) {
+                ids.push(t.id); claimed.add(t.id)
+              }
+            }
+          }
+          return { ...g, tabIds: ids }
+        })
         .filter(g => g.tabIds.length > 0)
-      if (cleaned.length > 0) setGroups(cleaned)
+      if (cleaned.length > 0) {
+        setGroups(cleaned)
+        await storage.groups.set(win.id!, cleaned)
+      }
     }
     loadGroups()
   }, [refreshTabs])
@@ -138,6 +156,7 @@ export default function App() {
             title: g.title,
             color: (g.color in GROUP_COLORS ? g.color : 'blue') as GroupColor,
             tabIds: g.indices.map(idx => tabs[idx]?.id).filter((id): id is number => id != null),
+            tabUrls: g.indices.map(idx => tabs[idx]?.url).filter((u): u is string => !!u),
             collapsed: false,
             source: 'domain' as const,
             createdAt: Date.now(),
@@ -159,6 +178,7 @@ export default function App() {
           title: g.title,
           color: (g.color in GROUP_COLORS ? g.color : 'blue') as GroupColor,
           tabIds: g.indices.map(idx => tabs[idx]?.id).filter((id): id is number => id != null),
+          tabUrls: g.indices.map(idx => tabs[idx]?.url).filter((u): u is string => !!u),
           collapsed: false,
           source: 'ai' as const,
           createdAt: Date.now(),
