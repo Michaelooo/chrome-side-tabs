@@ -648,6 +648,8 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
     <>
       {groups.map(group => {
         const groupTabs = groupMembers.get(group.id) ?? []
+        // 成员标签全部关闭后隐藏空分组，不再展示标题与计数 0
+        if (groupTabs.length === 0) return null
         const accent = GROUP_ACCENT[group.color] ?? GROUP_ACCENT.blue
 
         return (
