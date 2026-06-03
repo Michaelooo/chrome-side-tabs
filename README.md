@@ -2,6 +2,8 @@
 
 Chrome 侧边栏标签管理扩展，基于 Manifest V3 + Side Panel API，支持 AI 智能分组。
 
+介绍网站：https://michaelooo.github.io/chrome-side-tabs/
+
 ## 功能
 
 - **纵向标签列表** — 在浏览器侧边栏显示所有标签，替代顶部水平标签栏
