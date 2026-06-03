@@ -208,6 +208,7 @@ export default function App() {
       chrome.tabs.onMoved,
       chrome.tabs.onDetached,
       chrome.tabs.onAttached,
+      chrome.tabs.onReplaced,
     ]
     // debounce multiple rapid events
     let timer: ReturnType<typeof setTimeout>
@@ -618,8 +619,24 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
   onCloseOthers: (id: number) => void
   mouseY?: number | null
 }) {
-  const groupedTabIds = new Set(groups.flatMap(g => g.tabIds))
-  const ungroupedTabs = tabs.filter(t => !groupedTabIds.has(t.id))
+  // 解析每个分组的成员：先按 id，再按 URL 兜底。标签被 Chrome 闲置/冻结后
+  // tab id 会变（URL 不变），按 URL 匹配可让分组成员在 id 变化后自愈。
+  const claimed = new Set<number>()
+  const groupMembers = new Map<string, AppTab[]>()
+  for (const g of groups) {
+    const idSet = new Set(g.tabIds)
+    const urlSet = g.tabUrls?.length ? new Set(g.tabUrls) : null
+    const members: AppTab[] = []
+    for (const t of tabs) {
+      if (claimed.has(t.id)) continue
+      if (idSet.has(t.id) || (urlSet && t.url && urlSet.has(t.url))) {
+        members.push(t)
+        claimed.add(t.id)
+      }
+    }
+    groupMembers.set(g.id, members)
+  }
+  const ungroupedTabs = tabs.filter(t => !claimed.has(t.id))
 
   function toggleGroup(groupId: string) {
     setGroups(prev => prev.map(g =>
@@ -630,9 +647,7 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
   return (
     <>
       {groups.map(group => {
-        const groupTabs = group.tabIds
-          .map(id => tabs.find(t => t.id === id))
-          .filter((t): t is AppTab => t != null)
+        const groupTabs = groupMembers.get(group.id) ?? []
         const accent = GROUP_ACCENT[group.color] ?? GROUP_ACCENT.blue
 
         return (
