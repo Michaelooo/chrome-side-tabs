@@ -29,7 +29,7 @@ const BURST_PARTICLES = [
   { x: '7px', y: '-5px', color: '#f97316', size: 3 },
   { x: '-7px', y: '5px', color: '#14b8a6', size: 3 },
 ]
-const BURST_MS = 520
+const BURST_MS = 140
 
 interface CleanupItem extends CleanupCandidateInput {
   decision: CleanupDecision['decision']
@@ -83,6 +83,12 @@ function getDecisionLabel(decision: CleanupDecision['decision']) {
   if (decision === 'close') return '建议关闭'
   if (decision === 'keep') return '建议保留'
   return '不确定'
+}
+
+function compactCleanupItems(items: CleanupItem[]) {
+  const closeItems = items.filter(item => item.decision === 'close')
+  const unsureItems = items.filter(item => item.decision === 'unsure').slice(0, 5)
+  return closeItems.length > 0 ? [...closeItems, ...unsureItems] : unsureItems
 }
 
 // 直接在 App 里查 tabs，不走 service worker 中转
@@ -357,7 +363,7 @@ export default function App() {
         if (a.decision === 'keep' && b.decision === 'unsure') return 1
         return 0
       })
-      setCleanupItems(nextItems)
+      setCleanupItems(compactCleanupItems(nextItems))
     } catch (err) {
       setCleanupError(String(err))
     } finally {
@@ -583,7 +589,7 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
   const handleClose = () => {
     if (closing) return
     setClosing(true)
-    setTimeout(onClose, BURST_MS)
+    onClose()
   }
 
   const scale = useMemo(() => {
