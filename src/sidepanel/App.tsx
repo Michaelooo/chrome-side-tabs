@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { AppTab, VirtualGroup, GroupColor } from '../types/entities'
-import { groupTabsWithAI, groupTabsByDomain } from '../lib/ai-client'
+import { groupTabsWithAI, groupTabsByDomain, classifyTabsForCleanup } from '../lib/ai-client'
+import type { CleanupCandidateInput, CleanupDecision } from '../lib/ai-client'
 import { storage } from '../lib/storage'
 import { applyGroupsToBrowser } from '../lib/tab-manager'
 
@@ -30,6 +31,60 @@ const BURST_PARTICLES = [
 ]
 const BURST_MS = 520
 
+interface CleanupItem extends CleanupCandidateInput {
+  decision: CleanupDecision['decision']
+  aiReason: string
+  selected: boolean
+}
+
+function isNewTabUrl(url: string) {
+  return url === 'chrome://newtab/' || url === 'chrome://newtab' || url === 'about:blank'
+}
+
+function getHostname(url: string) {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
+function buildCleanupCandidates(tabs: AppTab[], idleThresholdMinutes: number): CleanupCandidateInput[] {
+  const byUrl = new Map<string, AppTab[]>()
+  for (const tab of tabs) {
+    if (!tab.url || tab.pinned || tab.active || tab.audible) continue
+    const list = byUrl.get(tab.url) ?? []
+    list.push(tab)
+    byUrl.set(tab.url, list)
+  }
+
+  const duplicateIds = new Set<number>()
+  for (const list of byUrl.values()) {
+    if (list.length > 1) {
+      list.slice(1).forEach(tab => duplicateIds.add(tab.id))
+    }
+  }
+
+  const now = Date.now()
+  return tabs.flatMap(tab => {
+    if (tab.pinned || tab.active || tab.audible) return []
+    const idleMinutes = Math.floor((now - tab.lastAccessed) / 60000)
+    const reasons: string[] = []
+    if (duplicateIds.has(tab.id)) reasons.push('重复 URL')
+    if (isNewTabUrl(tab.url)) reasons.push('新标签页')
+    if (tab.discarded) reasons.push('已休眠')
+    if (idleMinutes >= idleThresholdMinutes) reasons.push(`超过 ${idleThresholdMinutes} 分钟未访问`)
+    if (reasons.length === 0) return []
+    return [{ id: tab.id, title: tab.title || tab.url || '新标签', url: tab.url, reasons, idleMinutes }]
+  })
+}
+
+function getDecisionLabel(decision: CleanupDecision['decision']) {
+  if (decision === 'close') return '建议关闭'
+  if (decision === 'keep') return '建议保留'
+  return '不确定'
+}
+
 // 直接在 App 里查 tabs，不走 service worker 中转
 // 因为 sidepanel 是 extension page，可以直接调 chrome.tabs
 export default function App() {
@@ -42,6 +97,10 @@ export default function App() {
   const [grouping, setGrouping] = useState(false)
   const [mouseY, setMouseY] = useState<number | null>(null)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [cleanupItems, setCleanupItems] = useState<CleanupItem[]>([])
+  const [cleanupError, setCleanupError] = useState<string | null>(null)
   const themeLoaded = useRef(false)
 
   useEffect(() => {
@@ -257,6 +316,62 @@ export default function App() {
     if (tab) await chrome.tabs.update(tabId, { pinned: !tab.pinned })
   }
 
+  async function openCleanup() {
+    setCleanupOpen(true)
+    setCleanupLoading(true)
+    setCleanupError(null)
+    setCleanupItems([])
+    try {
+      const config = await storage.config.get()
+      const candidates = buildCleanupCandidates(tabs, config.suspend.idleMinutes)
+      if (candidates.length === 0) {
+        setCleanupItems([])
+        return
+      }
+
+      const { data, error } = await classifyTabsForCleanup(candidates, config)
+      if (!data) {
+        setCleanupError(error || 'AI 清理判断失败')
+        setCleanupItems(candidates.map(candidate => ({
+          ...candidate,
+          decision: 'unsure',
+          aiReason: error || 'AI 暂不可用，请手动判断',
+          selected: false,
+        })))
+        return
+      }
+
+      const decisionById = new Map(data.map(item => [item.tabId, item]))
+      const nextItems = candidates.map(candidate => {
+        const decision = decisionById.get(candidate.id)
+        return {
+          ...candidate,
+          decision: decision?.decision ?? 'keep',
+          aiReason: decision?.reason ?? 'AI 未建议关闭，默认保留',
+          selected: decision?.decision === 'close',
+        }
+      }).sort((a, b) => {
+        if (a.decision === 'close' && b.decision !== 'close') return -1
+        if (a.decision !== 'close' && b.decision === 'close') return 1
+        if (a.decision === 'unsure' && b.decision === 'keep') return -1
+        if (a.decision === 'keep' && b.decision === 'unsure') return 1
+        return 0
+      })
+      setCleanupItems(nextItems)
+    } catch (err) {
+      setCleanupError(String(err))
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
+  async function closeSelectedCleanupTabs() {
+    const ids = cleanupItems.filter(item => item.selected).map(item => item.id)
+    if (ids.length > 0) await chrome.tabs.remove(ids)
+    setCleanupOpen(false)
+    setCleanupItems([])
+  }
+
   // Filtered tabs for search
   const filteredTabs = searchQuery
     ? tabs.filter(t =>
@@ -293,6 +408,18 @@ export default function App() {
                 <path d="M9.5 2l.5 4 4 .5-4 .5-.5 4-.5-4-4-.5 4-.5z" /><path d="M18 8l.5 2 2 .5-2 .5-.5 2-.5-2-2-.5 2-.5z" /><path d="M13 16l.5 3 3 .5-3 .5-.5 3-.5-3-3-.5 3-.5z" />
               </svg>
             )}
+          </button>
+          <button
+            onClick={openCleanup}
+            className="p-1.5 rounded transition-colors"
+            style={{ color: 'var(--t-text-muted)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}
+            title="智能清理"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v5M14 11v5" />
+            </svg>
           </button>
           <button
             onClick={() => { setSearchOpen(true); setSearchQuery('') }}
@@ -411,6 +538,18 @@ export default function App() {
         </div>
       )}
 
+      {/* Cleanup overlay */}
+      {cleanupOpen && (
+        <CleanupOverlay
+          items={cleanupItems}
+          loading={cleanupLoading}
+          error={cleanupError}
+          onToggle={tabId => setCleanupItems(prev => prev.map(item => item.id === tabId ? { ...item, selected: !item.selected } : item))}
+          onClose={() => setCleanupOpen(false)}
+          onConfirm={closeSelectedCleanupTabs}
+        />
+      )}
+
       {/* Search overlay */}
       {searchOpen && (
         <SearchOverlay
@@ -486,7 +625,7 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
         />
       )}
 
-      {/* Favicon / Close button */}
+      {/* Favicon */}
       <div className="relative w-4 h-4 shrink-0 flex items-center justify-center">
         {closing ? (
           BURST_PARTICLES.map((p, i) => (
@@ -504,19 +643,6 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
               } as React.CSSProperties}
             />
           ))
-        ) : hovered ? (
-          <button
-            onClick={e => { e.stopPropagation(); handleClose() }}
-            className="w-4 h-4 flex items-center justify-center rounded-full cursor-pointer transition-colors"
-            style={{ color: 'var(--t-text-muted)' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; e.currentTarget.style.color = '#ef4444' }}
-            onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--t-text-muted)' }}
-            title="关闭标签"
-          >
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
         ) : tab.favIconUrl ? (
           <img
             src={tab.favIconUrl}
@@ -532,9 +658,9 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
       </div>
 
       {/* Title */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <div
-          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', display: 'inline-block', maxWidth: '100%', color: tab.active ? 'var(--t-text)' : 'var(--t-text-secondary)' }}
+          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', color: tab.active ? 'var(--t-text)' : 'var(--t-text-secondary)' }}
           className={`text-[12px] leading-tight truncate ${tab.pinned ? 'font-medium' : ''}`}
         >
           {tab.title || tab.url || '新标签'}
@@ -546,20 +672,29 @@ function TabRow({ tab, onActivate, onClose, onPin, onCloseOthers, groupAccent, m
         )}
       </div>
 
+      <button
+        onClick={e => { e.stopPropagation(); handleClose() }}
+        className="w-7 h-6 flex items-center justify-center rounded-full shrink-0 cursor-pointer transition-colors"
+        style={{ color: hovered ? '#ef4444' : 'var(--t-text-faint)', background: hovered ? 'rgba(239,68,68,0.12)' : 'transparent' }}
+        title="关闭标签"
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
+
       {/* Context menu trigger */}
-      {hovered && (
-        <button
-          onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
-          className="p-0.5 rounded shrink-0"
-          style={{ color: 'var(--t-text-faint)' }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-active)')}
-          onMouseLeave={e => (e.currentTarget.style.background = '')}
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
-          </svg>
-        </button>
-      )}
+      <button
+        onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
+        className="w-4 h-4 p-0.5 rounded shrink-0 transition-opacity"
+        style={{ color: 'var(--t-text-faint)', opacity: hovered || menuOpen ? 1 : 0, pointerEvents: hovered || menuOpen ? 'auto' : 'none' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-bg-active)')}
+        onMouseLeave={e => (e.currentTarget.style.background = '')}
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
 
       {/* Context menu */}
       {menuOpen && (
@@ -646,6 +781,28 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
 
   return (
     <>
+      {/* Ungrouped tabs */}
+      {ungroupedTabs.length > 0 && groups.length > 0 && (
+        <div className="mb-3">
+          <div className="flex items-center gap-2 mx-3 mt-1 mb-2">
+            <div className="h-px flex-1" style={{ background: 'var(--t-border)' }} />
+            <span className="text-[10px]" style={{ color: 'var(--t-text-faint)' }}>未分组 {ungroupedTabs.length}</span>
+            <div className="h-px flex-1" style={{ background: 'var(--t-border)' }} />
+          </div>
+          {ungroupedTabs.map(tab => (
+            <TabRow
+              key={tab.id}
+              tab={tab}
+              onActivate={() => onActivate(tab.id)}
+              onClose={() => onClose(tab.id)}
+              onPin={() => onPin(tab.id)}
+              onCloseOthers={() => onCloseOthers(tab.id)}
+              mouseY={mouseY}
+            />
+          ))}
+        </div>
+      )}
+
       {groups.map(group => {
         const groupTabs = groupMembers.get(group.id) ?? []
         // 成员标签全部关闭后隐藏空分组，不再展示标题与计数 0
@@ -695,29 +852,71 @@ function GroupedTabList({ groups, setGroups, tabs, onActivate, onClose, onPin, o
           </div>
         )
       })}
-
-      {/* Ungrouped tabs */}
-      {ungroupedTabs.length > 0 && groups.length > 0 && (
-        <>
-          <div className="flex items-center gap-2 mx-3 mt-1 mb-2">
-            <div className="h-px flex-1" style={{ background: 'var(--t-border)' }} />
-            <span className="text-[10px]" style={{ color: 'var(--t-text-faint)' }}>其他 {ungroupedTabs.length}</span>
-            <div className="h-px flex-1" style={{ background: 'var(--t-border)' }} />
-          </div>
-          {ungroupedTabs.map(tab => (
-            <TabRow
-              key={tab.id}
-              tab={tab}
-              onActivate={() => onActivate(tab.id)}
-              onClose={() => onClose(tab.id)}
-              onPin={() => onPin(tab.id)}
-              onCloseOthers={() => onCloseOthers(tab.id)}
-              mouseY={mouseY}
-            />
-          ))}
-        </>
-      )}
     </>
+  )
+}
+
+
+// --- Cleanup Overlay ---
+function CleanupOverlay({ items, loading, error, onToggle, onClose, onConfirm }: {
+  items: CleanupItem[]
+  loading: boolean
+  error: string | null
+  onToggle: (tabId: number) => void
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const selectedCount = items.filter(item => item.selected).length
+
+  return (
+    <div className="absolute inset-0 z-50 bg-black/50 flex items-start justify-center pt-6" onClick={onClose}>
+      <div className="w-[calc(100%-12px)] max-h-[calc(100%-48px)] rounded-lg border shadow-2xl overflow-hidden flex flex-col" style={{ background: 'var(--t-bg-active)', borderColor: 'var(--t-border)' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--t-border)' }}>
+          <div>
+            <div className="text-xs font-semibold" style={{ color: 'var(--t-text)' }}>智能清理</div>
+            <div className="text-[10px]" style={{ color: 'var(--t-text-muted)' }}>确认后才会关闭标签</div>
+          </div>
+          <button className="p-1 rounded" style={{ color: 'var(--t-text-muted)' }} onClick={onClose}>×</button>
+        </div>
+
+        <div className="overflow-y-auto p-2 flex-1">
+          {loading && <div className="py-8 text-center text-xs" style={{ color: 'var(--t-text-muted)' }}>AI 正在判断候选标签...</div>}
+          {!loading && error && <div className="mb-2 p-2 rounded text-xs bg-red-900/30 text-red-300">{error}</div>}
+          {!loading && items.length === 0 && <div className="py-8 text-center text-xs" style={{ color: 'var(--t-text-muted)' }}>没有发现需要清理的候选标签</div>}
+          {!loading && items.map(item => (
+            <label key={item.id} className="flex gap-2 p-2 rounded cursor-pointer" style={{ color: 'var(--t-text-secondary)' }}>
+              <input type="checkbox" checked={item.selected} onChange={() => onToggle(item.id)} className="mt-0.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: item.decision === 'close' ? 'rgba(239,68,68,0.16)' : 'var(--t-bg)', color: item.decision === 'close' ? '#ef4444' : 'var(--t-text-muted)' }}>{getDecisionLabel(item.decision)}</span>
+                  <span className="text-[10px] truncate" style={{ color: 'var(--t-text-faint)' }}>{getHostname(item.url)}</span>
+                </div>
+                <div className="text-xs truncate" style={{ color: 'var(--t-text)' }}>{item.title}</div>
+                <div className="text-[10px] truncate" style={{ color: 'var(--t-text-faint)' }}>{item.url}</div>
+                <div className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--t-text-muted)' }}>
+                  {item.aiReason}；候选原因：{item.reasons.join('、')}
+                </div>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-t" style={{ borderColor: 'var(--t-border)' }}>
+          <span className="text-[10px]" style={{ color: 'var(--t-text-muted)' }}>已选 {selectedCount} 个</span>
+          <div className="flex gap-2">
+            <button className="px-3 py-1.5 rounded text-xs" style={{ color: 'var(--t-text-muted)' }} onClick={onClose}>取消</button>
+            <button
+              className="px-3 py-1.5 rounded text-xs disabled:opacity-40"
+              style={{ background: '#ef4444', color: '#fff' }}
+              disabled={selectedCount === 0}
+              onClick={onConfirm}
+            >
+              关闭选中标签
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

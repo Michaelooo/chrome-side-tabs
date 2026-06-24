@@ -121,6 +121,99 @@ export async function groupTabsWithAI(
   }
 }
 
+export interface CleanupCandidateInput {
+  id: number
+  title: string
+  url: string
+  reasons: string[]
+  idleMinutes: number
+}
+
+export interface CleanupDecision {
+  tabId: number
+  decision: 'close' | 'keep' | 'unsure'
+  reason: string
+}
+
+function parseJsonContent(content: string): unknown {
+  const trimmed = content.trim()
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
+  return JSON.parse(fenced ? fenced[1] : trimmed)
+}
+
+export async function classifyTabsForCleanup(
+  candidates: CleanupCandidateInput[],
+  config: AppConfig,
+): Promise<{ data: CleanupDecision[] | null; error?: string }> {
+  if (!config.ai.enabled || !config.ai.apiKey || !config.ai.baseURL) {
+    return { data: null, error: 'AI 未配置，请先在设置页填写 API 信息' }
+  }
+
+  const maxCandidates = 40
+  const limitedCandidates = candidates.slice(0, maxCandidates)
+  const apiUrl = buildApiUrl(config.ai.baseURL)
+  const userContent = limitedCandidates.map(c => [
+    `id: ${c.id}`,
+    `title: ${c.title}`,
+    `url: ${c.url}`,
+    `idleMinutes: ${c.idleMinutes}`,
+    `reasons: ${c.reasons.join(', ')}`,
+  ].join('\n')).join('\n\n')
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30000)
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.ai.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.ai.model || 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: `你是浏览器标签清理助手。你会收到一批候选标签及候选原因，请判断每个标签是否适合关闭。\n\n规则：\n1. 只有重复页面、空白新标签页、明显无继续阅读价值且长时间未访问的页面，才建议 close。\n2. 文档、工作台、代码、邮件、聊天、正在进行的任务页面，倾向 keep。\n3. 不确定就输出 unsure，不要冒险建议关闭。\n4. 为了避免输出过长，只输出 decision 为 close 或 unsure 的标签；建议保留的标签不要输出。\n5. 严格输出 JSON，不要输出 Markdown 代码块或其他内容。\n\n输出示例：\n{"items":[{"tabId":123,"decision":"close","reason":"重复 URL，可以关闭重复项"},{"tabId":456,"decision":"unsure","reason":"文档页面，无法判断是否仍需要"}]}`,
+          },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.1,
+        max_tokens: 2000,
+      }),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      const errText = await response.text()
+      return { data: null, error: `API 返回 ${response.status}: ${errText.slice(0, 100)}` }
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+    if (!content) return { data: null, error: 'AI 返回空内容' }
+
+    const parsed = parseJsonContent(content) as { items?: CleanupDecision[] }
+    const ids = new Set(limitedCandidates.map(c => c.id))
+    const decisions = (parsed.items ?? [])
+      .filter(item => ids.has(item.tabId))
+      .map(item => ({
+        tabId: item.tabId,
+        decision: item.decision === 'close' || item.decision === 'keep' || item.decision === 'unsure' ? item.decision : 'unsure',
+        reason: item.reason || 'AI 未提供理由',
+      }))
+
+    return { data: decisions }
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') return { data: null, error: 'AI 请求超时 (30s)' }
+    if (err instanceof SyntaxError) return { data: null, error: `AI 返回格式异常: ${err.message}` }
+    return { data: null, error: `网络错误: ${(err as Error).message}` }
+  }
+}
+
 function mapCachedResult(
   result: Array<{ title: string; color: string; urls: string[] }>,
   tabs: Array<{ index: number; title: string; url: string }>,

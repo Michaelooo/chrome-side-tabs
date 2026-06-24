@@ -11,7 +11,7 @@ const KEYS = {
 const DEFAULT_CONFIG: AppConfig = {
   ai: { baseURL: '', apiKey: '', model: 'deepseek-chat', enabled: false, customPrompt: '' },
   grouping: { autoThreshold: 10, throttleMs: 30000 },
-  suspend: { enabled: false, idleMinutes: 30, whitelist: [] },
+  suspend: { enabled: false, idleMinutes: 90, whitelist: [] },
   ui: { theme: 'dark', density: 'comfortable' },
 }
 
