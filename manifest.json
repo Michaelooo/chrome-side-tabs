@@ -8,7 +8,6 @@
     "tabGroups",
     "storage",
     "sidePanel",
-    "commands",
     "alarms",
     "favicon",
     "scripting"
@@ -35,15 +34,6 @@
     "type": "module"
   },
   "options_page": "options.html",
-  "commands": {
-    "toggle-command-palette": {
-      "suggested_key": {
-        "default": "Ctrl+K",
-        "mac": "Command+K"
-      },
-      "description": "Open command palette"
-    }
-  },
   "icons": {
     "16": "public/icons/icon16.png",
     "32": "public/icons/icon32.png",
