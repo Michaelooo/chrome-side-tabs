@@ -2,7 +2,6 @@ import { storage } from '../lib/storage'
 import { queryTabsInWindow } from '../lib/tab-manager'
 import { provenance } from '../lib/provenance'
 import { logger } from '../lib/logger'
-import type { AppTab } from '../types/entities'
 
 export function initTabWatcher() {
   chrome.tabs.onCreated.addListener(tab => {

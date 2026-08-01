@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AppTab, VirtualGroup, GroupColor } from '../types/entities'
 import { planGroups, classifyTabsForCleanup } from '../lib/ai-client'
 import type { CleanupCandidateInput, CleanupDecision } from '../lib/ai-client'
@@ -880,6 +880,7 @@ function TabRow({
   const [menuOpen, setMenuOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLDivElement>(null)
 
   // 先放迸发彩蛋动画，再真正关闭
   const handleClose = () => {
@@ -888,14 +889,23 @@ function TabRow({
     onClose()
   }
 
-  const scale = useMemo(() => {
-    if (mouseY == null || !rowRef.current) return 1
-    const rect = rowRef.current.getBoundingClientRect()
+  // 鼠标跟随放大：在 effect 里量位置再写 DOM。
+  // 不能在 render 期间读 rowRef.current——那会拿到上一次提交的布局，
+  // 该更新时反而不更新。
+  useEffect(() => {
+    const el = titleRef.current
+    const row = rowRef.current
+    if (!el || !row) return
+    if (mouseY == null) {
+      el.style.transform = 'scale(1)'
+      return
+    }
+    const rect = row.getBoundingClientRect()
     const centerY = rect.top + rect.height / 2
     const distance = Math.abs(mouseY - centerY)
     const radius = 80
     const maxScale = 0.25
-    return distance < radius ? 1 + maxScale * (1 - distance / radius) : 1
+    el.style.transform = `scale(${distance < radius ? 1 + maxScale * (1 - distance / radius) : 1})`
   }, [mouseY])
 
   const bgColor = tab.active
@@ -980,7 +990,8 @@ function TabRow({
       {/* Title */}
       <div className="flex-1 min-w-0 overflow-hidden">
         <div
-          style={{ transform: `scale(${scale})`, transformOrigin: 'left center', transition: 'transform 0.08s ease', color: tab.active ? 'var(--t-text)' : 'var(--t-text-secondary)' }}
+          ref={titleRef}
+          style={{ transformOrigin: 'left center', transition: 'transform 0.08s ease', color: tab.active ? 'var(--t-text)' : 'var(--t-text-secondary)' }}
           className={`text-[12px] leading-tight truncate ${tab.pinned ? 'font-medium' : ''}`}
         >
           {tab.title || tab.url || '新标签'}

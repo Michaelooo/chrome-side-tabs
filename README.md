@@ -18,7 +18,7 @@ Chrome 侧边栏标签管理扩展，基于 Manifest V3 + Side Panel API，内�
 - **重复标签合并** — 同 URL 的标签显示 `×N` 角标，点击合并
 - **就地静音** — 有声音的标签直接在列表里静音，不用先跳过去找
 - **专注模式** — 锁定一个分组，其余标签自动折叠并休眠
-- **搜索** — `Cmd/Ctrl + K` 全局快捷键
+- **搜索** — 侧边栏内 `Cmd/Ctrl + K` 唤起
 
 ### AI 标签助手
 
@@ -64,7 +64,7 @@ Chrome 侧边栏标签管理扩展，基于 Manifest V3 + Side Panel API，内�
 |---|---|
 | `tabs` `tabGroups` | 读取和操作标签、同步原生标签组 |
 | `storage` | 本地保存设置、归档、对话历史 |
-| `sidePanel` `commands` `alarms` `favicon` | 侧边栏、快捷键、定时任务、图标 |
+| `sidePanel` `alarms` `favicon` | 侧边栏、定时任务、图标 |
 | `scripting` + `<all_urls>` | 性能探针、整页截图、读取页面正文 |
 
 **可选权限**（安装时不索取，用到才申请，可随时在设置页收回）：
@@ -119,9 +119,8 @@ pnpm build
 ```
 src/
 ├── background/              # Service Worker
-│   ├── service-worker.ts
+│   ├── service-worker.ts    # 生命周期初始化
 │   ├── tab-watcher.ts       # 标签事件监听 + 来源链路记录
-│   ├── ai-scheduler.ts
 │   ├── suspend-manager.ts   # 自动休眠
 │   └── stash-manager.ts     # 自动归档
 ├── sidepanel/               # 侧边栏 UI
@@ -149,6 +148,9 @@ src/
 ├── types/
 └── styles/globals.css
 ```
+
+侧边栏是 extension page，可以直接调用 `chrome.tabs`，不经 service worker 中转。
+后台只负责生命周期初始化、标签事件监听、自动休眠和自动归档。
 
 ## 已知限制
 
