@@ -1,6 +1,7 @@
 import { initTabWatcher, refreshCurrentWindow, refreshWindow } from './tab-watcher'
 import { triggerGrouping } from './ai-scheduler'
 import { initSuspendManager, updateSuspendAlarm } from './suspend-manager'
+import { initStashManager } from './stash-manager'
 import { initCommandHandler } from './command-handler'
 import { activateTab, closeTab, pinTab, discardTab, queryTabsInWindow } from '../lib/tab-manager'
 import { storage } from '../lib/storage'
@@ -32,6 +33,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 initTabWatcher()
 initSuspendManager()
+initStashManager()
 initCommandHandler()
 
 // Handle messages from sidepanel

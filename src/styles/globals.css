@@ -54,6 +54,39 @@
   100% { transform: translate(var(--bx), var(--by)) scale(0.1); opacity: 0; }
 }
 
+/* 助手浮球：常态缓慢呼吸，思考时加速并变亮 */
+@keyframes orb-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45), 0 4px 14px rgba(0, 0, 0, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0), 0 4px 18px rgba(99, 102, 241, 0.4); }
+}
+
+@keyframes orb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 浮层从浮球位置展开 */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 被助手选中的标签行：扫过一道高亮 */
+@keyframes tab-highlight {
+  0% { background-color: rgba(99, 102, 241, 0.35); }
+  100% { background-color: rgba(99, 102, 241, 0.14); }
+}
+
+.orb-idle { animation: orb-breathe 3.2s ease-in-out infinite; }
+.orb-busy { animation: orb-breathe 1s ease-in-out infinite; }
+.panel-in { animation: panel-in 180ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards; }
+.msg-in { animation: msg-in 220ms ease forwards; }
+.tab-highlight { animation: tab-highlight 900ms ease forwards; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   margin: 0;

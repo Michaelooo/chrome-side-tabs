@@ -9,8 +9,9 @@ interface ConfigState {
 
 const DEFAULT_CONFIG: AppConfig = {
   ai: { baseURL: '', apiKey: '', model: 'deepseek-chat', enabled: false, customPrompt: '' },
-  grouping: { autoThreshold: 10, throttleMs: 30000 },
+  grouping: { autoThreshold: 10, throttleMs: 30000, rules: [] },
   suspend: { enabled: false, idleMinutes: 30, whitelist: [] },
+  stash: { autoEnabled: false, autoDays: 7 },
   ui: { theme: 'dark', density: 'comfortable' },
 }
 

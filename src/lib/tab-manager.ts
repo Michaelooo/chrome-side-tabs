@@ -11,6 +11,8 @@ function chromeTabToAppTab(tab: chrome.tabs.Tab): AppTab {
     active: tab.active,
     pinned: tab.pinned,
     audible: tab.audible,
+    muted: tab.mutedInfo?.muted ?? false,
+    splitViewId: tab.splitViewId,
     discarded: tab.discarded ?? false,
     lastAccessed: tab.lastAccessed ?? Date.now(),
   }
@@ -19,6 +21,21 @@ function chromeTabToAppTab(tab: chrome.tabs.Tab): AppTab {
 export async function queryTabsInWindow(windowId: number): Promise<AppTab[]> {
   const tabs = await chrome.tabs.query({ windowId })
   return tabs.filter(t => t.id != null).map(chromeTabToAppTab)
+}
+
+/**
+ * 所有普通窗口的标签。侧栏列表是按窗口显示的，但助手必须看到全部——
+ * 否则用户在另一个窗口开的页面，助手会当成"不存在"。
+ */
+export async function queryAllTabs(): Promise<AppTab[]> {
+  const windows = await chrome.windows.getAll({ windowTypes: ['normal'], populate: true })
+  const out: AppTab[] = []
+  for (const win of windows) {
+    for (const tab of win.tabs ?? []) {
+      if (tab.id != null) out.push(chromeTabToAppTab(tab))
+    }
+  }
+  return out
 }
 
 export async function activateTab(tabId: number): Promise<void> {

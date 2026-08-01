@@ -15,6 +15,7 @@ export default defineConfig({
       input: {
         options: 'options.html',
         onboarding: 'onboarding.html',
+        perf: 'perf.html',
       },
     },
   },
