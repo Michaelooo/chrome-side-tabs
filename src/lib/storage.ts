@@ -10,8 +10,9 @@ const KEYS = {
 
 const DEFAULT_CONFIG: AppConfig = {
   ai: { baseURL: '', apiKey: '', model: 'deepseek-chat', enabled: false, customPrompt: '' },
-  grouping: { autoThreshold: 10, throttleMs: 30000 },
+  grouping: { autoThreshold: 10, throttleMs: 30000, rules: [] },
   suspend: { enabled: false, idleMinutes: 90, whitelist: [] },
+  stash: { autoEnabled: false, autoDays: 7 },
   ui: { theme: 'dark', density: 'comfortable' },
 }
 
@@ -35,9 +36,22 @@ async function sessionSet<T>(key: string, value: T): Promise<void> {
   await chrome.storage.session.set({ [key]: value })
 }
 
+// 配置结构会随版本增加字段，旧的存储里可能整段缺失。
+// 按段落补默认值，避免读到 undefined 直接崩。
+function withDefaults(saved: Partial<AppConfig> | null): AppConfig {
+  if (!saved) return { ...DEFAULT_CONFIG }
+  return {
+    ai: { ...DEFAULT_CONFIG.ai, ...saved.ai },
+    grouping: { ...DEFAULT_CONFIG.grouping, ...saved.grouping },
+    suspend: { ...DEFAULT_CONFIG.suspend, ...saved.suspend },
+    stash: { ...DEFAULT_CONFIG.stash, ...saved.stash },
+    ui: { ...DEFAULT_CONFIG.ui, ...saved.ui },
+  }
+}
+
 export const storage = {
   config: {
-    get: () => localGet<AppConfig>(KEYS.config).then(c => c ?? { ...DEFAULT_CONFIG }),
+    get: () => localGet<AppConfig>(KEYS.config).then(withDefaults),
     set: (partial: Partial<AppConfig>) =>
       storage.config.get().then(current => localSet(KEYS.config, { ...current, ...partial })),
   },

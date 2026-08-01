@@ -10,9 +10,17 @@
     "sidePanel",
     "commands",
     "alarms",
-    "favicon"
+    "favicon",
+    "scripting"
   ],
-  "host_permissions": ["<all_urls>"],
+  "optional_permissions": [
+    "history",
+    "bookmarks",
+    "sessions"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src * data: blob:;"
   },
