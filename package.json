@@ -1,11 +1,12 @@
 {
   "name": "chrome-side-tabs",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:zip": "pnpm build && node scripts/create-zip.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -24,8 +25,9 @@
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^11.0.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "archiver": "^8.0.0",
     "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-hooks": "7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "tailwindcss": "^4.2.2",
