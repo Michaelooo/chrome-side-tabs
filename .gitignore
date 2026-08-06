@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Release artifacts
+/release/*.zip
+/release/*.sha256
+/release-notes.md
 .superpowers/
 
 # Environment & secrets
