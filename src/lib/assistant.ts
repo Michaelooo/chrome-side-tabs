@@ -473,7 +473,7 @@ function sanitize(raw: unknown, tabs: AppTab[]): AssistantReply {
             tabIds: ids,
             folderName: typeof a.folderName === 'string' && a.folderName.trim()
               ? a.folderName.trim().slice(0, 40)
-              : `Side Tabs ${new Date().toLocaleDateString('zh-CN')}`,
+              : `Sift ${new Date().toLocaleDateString('zh-CN')}`,
           })
           break
         default:
@@ -502,7 +502,7 @@ function sanitize(raw: unknown, tabs: AppTab[]): AssistantReply {
   }
 
   if (dropped.length > 0) {
-    console.warn('[SideTabs] 助手有操作被丢弃：', dropped, '原始返回：', raw)
+    console.warn('[Sift] 助手有操作被丢弃：', dropped, '原始返回：', raw)
   }
 
   return {

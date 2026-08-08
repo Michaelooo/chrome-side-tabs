@@ -1,4 +1,4 @@
-const PREFIX = '[SideTabs]'
+const PREFIX = '[Sift]'
 
 export const logger = {
   info: (...args: unknown[]) => console.log(PREFIX, ...args),

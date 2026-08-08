@@ -198,8 +198,13 @@ export default function ToolsPanel() {
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-11 shrink-0" style={{ borderBottom: '1px solid var(--t-border)' }}>
         <div className="flex items-center gap-2">
-          <div style={{ width: 14, height: 14, borderRadius: 7, background: 'linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4)' }} />
-          <span className="text-sm font-semibold" style={{ color: 'var(--t-text)' }}>Side Tabs</span>
+          {/* 图标的迷你版：两组颜色就是产品语义 */}
+          <svg width="14" height="14" viewBox="0 0 16 16" style={{ display: 'block' }}>
+            <rect width="16" height="16" rx="3.5" fill="#1e1b4b" />
+            <rect x="3" y="4" width="10" height="3" rx="1.5" fill="#22d3ee" />
+            <rect x="3" y="9" width="7" height="3" rx="1.5" fill="#a78bfa" />
+          </svg>
+          <span className="text-sm font-semibold" style={{ color: 'var(--t-text)' }}>Sift</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium tabular-nums" style={{ background: 'var(--t-bg-active)', color: 'var(--t-text-muted)' }}>
             {tabs.length}
           </span>

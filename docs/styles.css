@@ -332,7 +332,7 @@ video.shot { background: var(--t-bg); }
 }
 .soon-panel__icon { color: var(--t-text-faint); font-size: 18px; }
 .soon-panel__placeholder { font-size: 14px; color: var(--t-text-faint); }
-.soon-panel__list { display: flex; flex-direction: column; gap: 8px; filter: blur(1px); opacity: 0.55; }
+.soon-panel__list { display: flex; flex-direction: column; gap: 8px; }
 .soon-panel__row {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 12px; border-radius: 10px;
