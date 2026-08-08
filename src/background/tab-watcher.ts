@@ -1,6 +1,7 @@
 import { storage } from '../lib/storage'
 import { queryTabsInWindow } from '../lib/tab-manager'
 import { provenance } from '../lib/provenance'
+import { refreshBadge } from './badge'
 import { logger } from '../lib/logger'
 
 export function initTabWatcher() {
@@ -46,4 +47,6 @@ export async function refreshWindow(windowId: number) {
   } catch (err) {
     logger.error('Failed to refresh window', windowId, err)
   }
+  // 标签一变，未分组数量就可能变，徽标跟着走
+  refreshBadge()
 }

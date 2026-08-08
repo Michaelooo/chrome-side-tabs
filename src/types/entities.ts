@@ -64,10 +64,18 @@ export interface GroupingRule {
   color: GroupColor
 }
 
+/**
+ * 界面形态。Chrome 145+ 有了原生垂直标签栏，但没有任何 API 能让扩展检测它是否开启，
+ * 所以只能由用户自己选。
+ * - sidepanel：扩展侧栏显示完整标签列表（配合传统水平标签栏）
+ * - orb：侧栏禁用，改由网页左下角浮球提供 AI 整理/清理/归档/对话，列表交给 Chrome 原生垂直标签栏
+ */
+export type UIMode = 'sidepanel' | 'orb'
+
 export interface AppConfig {
   ai: { baseURL: string; apiKey: string; model: string; enabled: boolean; customPrompt: string }
-  grouping: { autoThreshold: number; throttleMs: number; rules: GroupingRule[] }
+  grouping: { rules: GroupingRule[] }
   suspend: { enabled: boolean; idleMinutes: number; whitelist: string[] }
   stash: { autoEnabled: boolean; autoDays: number }
-  ui: { theme: 'dark' | 'light' | 'system'; density: 'comfortable' | 'compact' }
+  ui: { theme: 'dark' | 'light' | 'system'; density: 'comfortable' | 'compact'; mode: UIMode }
 }

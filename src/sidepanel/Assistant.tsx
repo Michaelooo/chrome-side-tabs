@@ -35,6 +35,7 @@ interface Message {
 
 const SUGGESTIONS = [
   '哪些标签在摸鱼？',
+  '哪些标签最吃内存？',
   '总结一下我正在看的页面',
   '恢复我刚关掉的页面',
   '把这些标签按项目分组',
@@ -105,7 +106,7 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-export default function Assistant({ tabs: windowTabs, groups, origins, onSelect, onGroup, onChanged, onOpenChange }: {
+export default function Assistant({ tabs: windowTabs, groups, origins, onSelect, onGroup, onChanged, onOpenChange, embedded = false, seedQuestion }: {
   tabs: AppTab[]
   groups: VirtualGroup[]
   origins: Record<number, TabOrigin>
@@ -114,8 +115,15 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
   onChanged: () => void
   /** 面板开关同步给宿主，让侧栏的 j/k/x 键盘导航在面板打开时让位 */
   onOpenChange?: (open: boolean) => void
+  /**
+   * 内嵌模式：不画自己的浮球，也不铺遮罩，直接作为宿主布局里的一块常驻区域。
+   * 浮球面板用这个——页面上已经有一个浮球了，不该再套一个。
+   */
+  embedded?: boolean
+  /** 挂载后自动发出的第一个问题。性能页的「让 AI 分析」用它把话题直接带过来 */
+  seedQuestion?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(embedded)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -126,6 +134,7 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
   const [historyList, setHistoryList] = useState<ChatSession[]>([])
   const [confirmClear, setConfirmClear] = useState(false)
   const createdAtRef = useRef(Date.now())
+  const seedSent = useRef(false)
   // 侧栏列表只显示当前窗口，但助手必须看到所有窗口的标签，
   // 否则用户在别的窗口开的页面会被当成"不存在"。
   const [tabs, setTabs] = useState<AppTab[]>(windowTabs)
@@ -245,8 +254,9 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
 
       const history: ChatTurn[] = messages.map(m => ({ role: m.role, content: m.text }))
       const { data, error, missingPermissions: missing } = await askAssistant(
-        question, liveTabs, groups, origins, history, config,
+        question, liveTabs, groups, origins, history, config, setProgress,
       )
+      setProgress(null)
 
       if (!data) {
         setMessages(prev => [...prev, {
@@ -311,6 +321,13 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
     }
   }, [busy, messages, tabs, groups, origins, onSelect, onGroup, onChanged, syncTabs])
 
+  // 带过来的问题只发一次。StrictMode 下 effect 会跑两遍，用 ref 挡住
+  useEffect(() => {
+    if (!seedQuestion || seedSent.current) return
+    seedSent.current = true
+    send(seedQuestion)
+  }, [seedQuestion, send])
+
   /** 必须由按钮点击直接触发，Chrome 要求 request 在用户手势里调用 */
   async function grantAndRetry(msg: Message) {
     if (!msg.needsPermissions) return
@@ -358,7 +375,7 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
     }
   }
 
-  if (!open) {
+  if (!embedded && !open) {
     return (
       <button
         onClick={() => setOpen(true)}
@@ -377,21 +394,22 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
     )
   }
 
-  return (
-    <div className="absolute inset-0 z-50 flex flex-col" onClick={() => setOpen(false)}>
-      <div className="absolute inset-0 backdrop-blur-[2px]" style={{ background: 'rgba(0,0,0,0.35)' }} />
-
-      <div
-        className="panel-in relative m-1.5 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0"
-        style={{
-          background: 'var(--t-bg-active)',
-          border: '1px solid rgba(99,102,241,0.35)',
-          boxShadow: '0 0 24px rgba(99,102,241,0.18), 0 8px 32px rgba(0,0,0,0.45)',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
+  const panel = (
+    <div
+      className={embedded
+        ? 'relative flex flex-col flex-1 min-h-0'
+        : 'panel-in relative m-1.5 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0'}
+      style={embedded
+        ? { background: 'var(--t-bg)' }
+        : {
+            background: 'var(--t-bg-active)',
+            border: '1px solid rgba(99,102,241,0.35)',
+            boxShadow: '0 0 24px rgba(99,102,241,0.18), 0 8px 32px rgba(0,0,0,0.45)',
+          }}
+      onClick={e => e.stopPropagation()}
+    >
         {/* 顶部：渐变细线 + 标题 */}
-        <div style={{ height: 2, background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4)' }} />
+        {!embedded && <div style={{ height: 2, background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4)' }} />}
         <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--t-border)' }}>
           <div className="flex items-center gap-2">
             <div
@@ -427,7 +445,9 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
                 </svg>
               </button>
             )}
-            <button className="p-1 rounded" style={{ color: 'var(--t-text-muted)' }} onClick={() => setOpen(false)}>×</button>
+            {!embedded && (
+              <button className="p-1 rounded" style={{ color: 'var(--t-text-muted)' }} onClick={() => setOpen(false)}>×</button>
+            )}
           </div>
         </div>
 
@@ -611,8 +631,9 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
                   send(input)
                 }
                 if (e.key === 'Escape') {
+                  // 内嵌时 ESC 归宿主处理（浮球面板要整个收起），这里只管预览
                   if (preview) setPreview(null)
-                  else setOpen(false)
+                  else if (!embedded) setOpen(false)
                 }
               }}
               rows={1}
@@ -739,7 +760,16 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
             </div>
           </div>
         )}
-      </div>
+    </div>
+  )
+
+  // 内嵌时宿主自己有边框和背景，不铺遮罩、也不该点外面就关掉
+  if (embedded) return panel
+
+  return (
+    <div className="absolute inset-0 z-50 flex flex-col" onClick={() => setOpen(false)}>
+      <div className="absolute inset-0 backdrop-blur-[2px]" style={{ background: 'rgba(0,0,0,0.35)' }} />
+      {panel}
     </div>
   )
 }
