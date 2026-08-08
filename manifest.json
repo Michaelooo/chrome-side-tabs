@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Side Tabs",
+  "name": "Sift",
   "version": "0.1.0",
-  "description": "AI-powered tab manager in Chrome side panel",
+  "description": "AI 标签管家 —— 语义自动分组、智能清理、对话式整理、归档不丢，配合 Chrome 垂直标签栏使用",
   "permissions": [
     "tabs",
     "tabGroups",
@@ -24,7 +24,7 @@
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src * data: blob:;"
   },
   "action": {
-    "default_title": "Side Tabs"
+    "default_title": "Sift"
   },
   "commands": {
     "toggle-panel": {
@@ -32,7 +32,7 @@
         "default": "Alt+Shift+T",
         "mac": "Command+Shift+E"
       },
-      "description": "打开 Side Tabs 面板"
+      "description": "打开 Sift 面板"
     }
   },
   "side_panel": {

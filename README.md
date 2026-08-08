@@ -1,8 +1,14 @@
-# Side Tabs
+# Sift
 
-Chrome 侧边栏标签管理扩展，基于 Manifest V3 + Side Panel API，内置可对话的 AI 标签助手。
+**AI 标签管家。它不替你排列标签，它替你判断标签。**
 
-介绍网站：https://michaelooo.github.io/chrome-side-tabs/
+Chrome 145+ 已经原生支持垂直标签栏——纵向列表、标签组的展示折叠、Tab Search，浏览器自己都做了，而且拖拽和右键菜单比任何扩展都全。所以 Sift 不再跟它抢渲染层，只做原生没有的那一半：
+
+> 这 41 个标签**是什么**、哪些在**摸鱼**、哪些又**重**又没人看、该关掉哪些**最划算**、关掉的东西**去哪儿找回来**。
+
+分组结果直接同步进 Chrome 原生标签组，所以整理效果就呈现在浏览器自己的标签栏里，Sift 不画第二份列表。
+
+基于 Manifest V3，内置可对话的 AI 标签助手。介绍网站：https://michaelooo.github.io/chrome-side-tabs/
 
 ## 功能
 

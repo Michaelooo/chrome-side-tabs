@@ -42,20 +42,20 @@ export async function groupTabsWithAI(
   if (!forceRefresh) {
     const cached = await storage.aiCache.get(cacheKey)
     if (cached) {
-      console.log('[SideTabs] AI cache hit for key:', cacheKey.slice(0, 8))
+      console.log('[Sift] AI cache hit for key:', cacheKey.slice(0, 8))
       return { data: mapCachedResult(cached.result, tabs) }
     }
   }
 
   if (!config.ai.enabled || !config.ai.apiKey || !config.ai.baseURL) {
-    console.warn('[SideTabs] AI not configured:', { enabled: config.ai.enabled, hasKey: !!config.ai.apiKey, hasURL: !!config.ai.baseURL })
+    console.warn('[Sift] AI not configured:', { enabled: config.ai.enabled, hasKey: !!config.ai.apiKey, hasURL: !!config.ai.baseURL })
     return { data: null, error: 'AI 未配置，请先在设置页填写 API 信息' }
   }
 
   const apiUrl = buildApiUrl(config.ai.baseURL)
   const userContent = tabs.map(t => `[${t.index}] ${t.title} | ${t.url}`).join('\n')
 
-  console.log('[SideTabs] Calling AI:', apiUrl, 'with', tabs.length, 'tabs')
+  console.log('[Sift] Calling AI:', apiUrl, 'with', tabs.length, 'tabs')
 
   try {
     const controller = new AbortController()
@@ -84,18 +84,18 @@ export async function groupTabsWithAI(
 
     if (!response.ok) {
       const errText = await response.text()
-      console.error('[SideTabs] AI request failed:', response.status, errText)
+      console.error('[Sift] AI request failed:', response.status, errText)
       return { data: null, error: `API 返回 ${response.status}: ${errText.slice(0, 100)}` }
     }
 
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content
     if (!content) {
-      console.error('[SideTabs] AI returned empty content:', JSON.stringify(data).slice(0, 200))
+      console.error('[Sift] AI returned empty content:', JSON.stringify(data).slice(0, 200))
       return { data: null, error: 'AI 返回空内容' }
     }
 
-    console.log('[SideTabs] AI response:', content.slice(0, 200))
+    console.log('[Sift] AI response:', content.slice(0, 200))
 
     const parsed: AIGroupResponse = JSON.parse(content)
 
@@ -114,10 +114,10 @@ export async function groupTabsWithAI(
     return { data: parsed }
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
-      console.error('[SideTabs] AI request timed out (30s)')
+      console.error('[Sift] AI request timed out (30s)')
       return { data: null, error: 'AI 请求超时 (30s)' }
     } else {
-      console.error('[SideTabs] AI grouping error:', err)
+      console.error('[Sift] AI grouping error:', err)
       return { data: null, error: `网络错误: ${(err as Error).message}` }
     }
   }
