@@ -1,18 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AppTab, VirtualGroup, GroupColor } from '../types/entities'
-import { planGroups, classifyTabsForCleanup } from '../lib/ai-client'
-import type { CleanupCandidateInput, CleanupDecision } from '../lib/ai-client'
-import { stash, stashAndClose, toMarkdown, formatStashedAt } from '../lib/stash'
-import { saveSession, restoreSession, deleteSession } from '../lib/session-manager'
-import { listRecentlyClosed, restoreSessionId } from '../lib/recently-closed'
-import type { ClosedItem } from '../lib/recently-closed'
-import { hasPermissions, requestPermissions } from '../lib/permissions'
-import type { StashedTab, Session } from '../types/entities'
+import { stash, stashAndClose } from '../lib/stash'
 import Assistant from './Assistant'
+import CleanupOverlay from '../panels/CleanupOverlay'
+import StashDrawer from '../panels/StashDrawer'
+import { runGrouping, createGroup, buildCleanupItems, loadGroups } from '../lib/tab-tools'
+import type { CleanupItem } from '../lib/tab-tools'
 import { provenance, buildTabTree, flattenTree, collectSubtreeIds } from '../lib/provenance'
 import type { TabOrigin, TabNode } from '../lib/provenance'
-import { storage } from '../lib/storage'
-import { applyGroupsToBrowser } from '../lib/tab-manager'
 
 // 关闭标签的迸发彩蛋粒子：放射状方向与颜色
 const BURST_PARTICLES = [
@@ -28,66 +23,6 @@ const BURST_PARTICLES = [
   { x: '-7px', y: '5px', color: '#14b8a6', size: 3 },
 ]
 const BURST_MS = 140
-
-interface CleanupItem extends CleanupCandidateInput {
-  decision: CleanupDecision['decision']
-  aiReason: string
-  selected: boolean
-}
-
-function isNewTabUrl(url: string) {
-  return url === 'chrome://newtab/' || url === 'chrome://newtab' || url === 'about:blank'
-}
-
-function getHostname(url: string) {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return url
-  }
-}
-
-function buildCleanupCandidates(tabs: AppTab[], idleThresholdMinutes: number): CleanupCandidateInput[] {
-  const byUrl = new Map<string, AppTab[]>()
-  for (const tab of tabs) {
-    if (!tab.url || tab.pinned || tab.active || tab.audible) continue
-    const list = byUrl.get(tab.url) ?? []
-    list.push(tab)
-    byUrl.set(tab.url, list)
-  }
-
-  const duplicateIds = new Set<number>()
-  for (const list of byUrl.values()) {
-    if (list.length > 1) {
-      list.slice(1).forEach(tab => duplicateIds.add(tab.id))
-    }
-  }
-
-  const now = Date.now()
-  return tabs.flatMap(tab => {
-    if (tab.pinned || tab.active || tab.audible) return []
-    const idleMinutes = Math.floor((now - tab.lastAccessed) / 60000)
-    const reasons: string[] = []
-    if (duplicateIds.has(tab.id)) reasons.push('重复 URL')
-    if (isNewTabUrl(tab.url)) reasons.push('新标签页')
-    if (tab.discarded) reasons.push('已休眠')
-    if (idleMinutes >= idleThresholdMinutes) reasons.push(`超过 ${idleThresholdMinutes} 分钟未访问`)
-    if (reasons.length === 0) return []
-    return [{ id: tab.id, title: tab.title || tab.url || '新标签', url: tab.url, reasons, idleMinutes }]
-  })
-}
-
-function getDecisionLabel(decision: CleanupDecision['decision']) {
-  if (decision === 'close') return '建议关闭'
-  if (decision === 'keep') return '建议保留'
-  return '不确定'
-}
-
-function compactCleanupItems(items: CleanupItem[]) {
-  const closeItems = items.filter(item => item.decision === 'close')
-  const unsureItems = items.filter(item => item.decision === 'unsure').slice(0, 5)
-  return closeItems.length > 0 ? [...closeItems, ...unsureItems] : unsureItems
-}
 
 // 直接在 App 里查 tabs，不走 service worker 中转
 // 因为 sidepanel 是 extension page，可以直接调 chrome.tabs
@@ -173,37 +108,10 @@ export default function App() {
   // Initial load
   useEffect(() => {
     refreshTabs()
-    async function loadGroups() {
-      const win = await chrome.windows.getCurrent()
-      const saved = await storage.groups.get(win.id!)
-      if (saved.length === 0) return
-      // 重连分组成员：先按 id 保留存活标签，再按 URL 认领重启后换了 id 的标签
-      const liveTabs = await chrome.tabs.query({ windowId: win.id })
-      const liveIds = new Set(liveTabs.map(t => t.id))
-      const claimed = new Set<number>()
-      const cleaned = saved
-        .map(g => {
-          const ids: number[] = []
-          for (const id of g.tabIds) {
-            if (liveIds.has(id) && !claimed.has(id)) { ids.push(id); claimed.add(id) }
-          }
-          if (g.tabUrls?.length) {
-            const urlSet = new Set(g.tabUrls)
-            for (const t of liveTabs) {
-              if (t.id != null && !claimed.has(t.id) && t.url && urlSet.has(t.url)) {
-                ids.push(t.id); claimed.add(t.id)
-              }
-            }
-          }
-          return { ...g, tabIds: ids }
-        })
-        .filter(g => g.tabIds.length > 0)
-      if (cleaned.length > 0) {
-        setGroups(cleaned)
-        await storage.groups.set(win.id!, cleaned)
-      }
-    }
-    loadGroups()
+    chrome.windows.getCurrent().then(async win => {
+      const saved = await loadGroups(win.id!)
+      if (saved.length > 0) setGroups(saved)
+    })
   }, [refreshTabs])
 
   // AI 分组：规则先行 → 复用缓存 → 只把没见过的标签送给 AI → 失败时本地聚类兜底
@@ -214,57 +122,19 @@ export default function App() {
     setGrouping(true)
     setError(null)
     try {
-      const config = await storage.config.get()
-      if (!config.ai.apiKey || !config.ai.baseURL) {
+      const win = await chrome.windows.getCurrent()
+      const result = await runGrouping(tabs, win.id!, { forceRefresh })
+      if (result.notConfigured) {
         chrome.runtime.openOptionsPage()
-        setGrouping(false)
         return
       }
-
-      const tabInputs = tabs.map((t, i) => ({ index: i, title: t.title, url: t.url }))
-      const plan = await planGroups(tabInputs, config, { forceRefresh })
-      if (plan.error) setError(`AI 不可用，已用本地聚类兜底：${plan.error}`)
-
-      // URL 可能对应多个标签，按 URL 回填 tabId 时要保证一个标签只进一个组
-      const urlToIds = new Map<string, number[]>()
-      for (const t of tabs) {
-        const list = urlToIds.get(t.url) ?? []
-        list.push(t.id)
-        urlToIds.set(t.url, list)
+      // 硬失败时分组没落盘，界面上也保持原样
+      if (result.error) {
+        setError(result.error)
+        return
       }
-      const used = new Set<number>()
-
-      const newGroups: VirtualGroup[] = plan.groups
-        .map((g, i) => {
-          const ids: number[] = []
-          for (const url of g.urls) {
-            for (const id of urlToIds.get(url) ?? []) {
-              if (!used.has(id)) { ids.push(id); used.add(id) }
-            }
-          }
-          return {
-            id: `grp-${g.source}-${Date.now()}-${i}`,
-            title: g.title,
-            color: g.color,
-            tabIds: ids,
-            tabUrls: g.urls,
-            collapsed: false,
-            source: (g.source === 'rule' ? 'manual' : g.source === 'local' ? 'domain' : 'ai') as VirtualGroup['source'],
-            createdAt: Date.now(),
-          }
-        })
-        .filter(g => g.tabIds.length > 0)
-
-      const win = await chrome.windows.getCurrent()
-      setGroups(newGroups)
-      await storage.groups.set(win.id!, newGroups)
-      try {
-        await applyGroupsToBrowser(win.id!, newGroups)
-      } catch (syncErr) {
-        console.error('Failed to sync groups to browser:', syncErr)
-      }
-    } catch (err) {
-      setError(`分组失败: ${String(err)}`)
+      if (result.warning) setError(result.warning)
+      setGroups(result.groups)
     } finally {
       setGrouping(false)
     }
@@ -394,44 +264,9 @@ export default function App() {
     setCleanupError(null)
     setCleanupItems([])
     try {
-      const config = await storage.config.get()
-      const candidates = buildCleanupCandidates(tabs, config.suspend.idleMinutes)
-      if (candidates.length === 0) {
-        setCleanupItems([])
-        return
-      }
-
-      const { data, error } = await classifyTabsForCleanup(candidates, config)
-      if (!data) {
-        setCleanupError(error || 'AI 清理判断失败')
-        setCleanupItems(candidates.map(candidate => ({
-          ...candidate,
-          decision: 'unsure',
-          aiReason: error || 'AI 暂不可用，请手动判断',
-          selected: false,
-        })))
-        return
-      }
-
-      const decisionById = new Map(data.map(item => [item.tabId, item]))
-      const nextItems = candidates.map(candidate => {
-        const decision = decisionById.get(candidate.id)
-        return {
-          ...candidate,
-          decision: decision?.decision ?? 'keep',
-          aiReason: decision?.reason ?? 'AI 未建议关闭，默认保留',
-          selected: decision?.decision === 'close',
-        }
-      }).sort((a, b) => {
-        if (a.decision === 'close' && b.decision !== 'close') return -1
-        if (a.decision !== 'close' && b.decision === 'close') return 1
-        if (a.decision === 'unsure' && b.decision === 'keep') return -1
-        if (a.decision === 'keep' && b.decision === 'unsure') return 1
-        return 0
-      })
-      setCleanupItems(compactCleanupItems(nextItems))
-    } catch (err) {
-      setCleanupError(String(err))
+      const { items, error } = await buildCleanupItems(tabs)
+      setCleanupItems(items)
+      if (error) setCleanupError(error)
     } finally {
       setCleanupLoading(false)
     }
@@ -453,34 +288,10 @@ export default function App() {
     setCleanupItems([])
   }
 
-  // 助手要建分组时回调到这里。被划走的标签要从原来的分组里摘掉，
-  // 避免一个标签同时属于两个组。
+  // 助手要建分组时回调到这里
   async function createGroupFromAssistant(title: string, color: GroupColor, tabIds: number[]) {
     const win = await chrome.windows.getCurrent()
-    const newGroup: VirtualGroup = {
-      id: `grp-assist-${Date.now()}`,
-      title,
-      color,
-      tabIds,
-      tabUrls: tabIds.map(id => tabs.find(t => t.id === id)?.url).filter((u): u is string => !!u),
-      collapsed: false,
-      source: 'manual',
-      createdAt: Date.now(),
-    }
-    const taken = new Set(tabIds)
-    const next = [
-      ...groups
-        .map(g => ({ ...g, tabIds: g.tabIds.filter(id => !taken.has(id)) }))
-        .filter(g => g.tabIds.length > 0),
-      newGroup,
-    ]
-    setGroups(next)
-    await storage.groups.set(win.id!, next)
-    try {
-      await applyGroupsToBrowser(win.id!, next)
-    } catch (syncErr) {
-      console.error('Failed to sync groups to browser:', syncErr)
-    }
+    setGroups(await createGroup(win.id!, groups, tabs, { title, color, tabIds }))
   }
 
   // 助手指出的标签高亮几秒后淡出
@@ -1298,422 +1109,6 @@ function GroupedTabList({
         )
       })}
     </>
-  )
-}
-
-
-// --- Cleanup Overlay ---
-function CleanupOverlay({ items, loading, error, onToggle, onClose, onConfirm, onStash }: {
-  items: CleanupItem[]
-  loading: boolean
-  error: string | null
-  onToggle: (tabId: number) => void
-  onClose: () => void
-  onConfirm: () => void
-  onStash: () => void
-}) {
-  const selectedCount = items.filter(item => item.selected).length
-
-  return (
-    <div className="absolute inset-0 z-50 bg-black/50 flex items-start justify-center pt-6" onClick={onClose}>
-      <div className="w-[calc(100%-12px)] max-h-[calc(100%-48px)] rounded-lg border shadow-2xl overflow-hidden flex flex-col" style={{ background: 'var(--t-bg-active)', borderColor: 'var(--t-border)' }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--t-border)' }}>
-          <div>
-            <div className="text-xs font-semibold" style={{ color: 'var(--t-text)' }}>智能清理</div>
-            <div className="text-[10px]" style={{ color: 'var(--t-text-muted)' }}>确认后才会关闭标签</div>
-          </div>
-          <button className="p-1 rounded" style={{ color: 'var(--t-text-muted)' }} onClick={onClose}>×</button>
-        </div>
-
-        <div className="overflow-y-auto p-2 flex-1">
-          {loading && <div className="py-8 text-center text-xs" style={{ color: 'var(--t-text-muted)' }}>AI 正在判断候选标签...</div>}
-          {!loading && error && <div className="mb-2 p-2 rounded text-xs bg-red-900/30 text-red-300">{error}</div>}
-          {!loading && items.length === 0 && <div className="py-8 text-center text-xs" style={{ color: 'var(--t-text-muted)' }}>没有发现需要清理的候选标签</div>}
-          {!loading && items.map(item => (
-            <label key={item.id} className="flex gap-2 p-2 rounded cursor-pointer" style={{ color: 'var(--t-text-secondary)' }}>
-              <input type="checkbox" checked={item.selected} onChange={() => onToggle(item.id)} className="mt-0.5 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: item.decision === 'close' ? 'rgba(239,68,68,0.16)' : 'var(--t-bg)', color: item.decision === 'close' ? '#ef4444' : 'var(--t-text-muted)' }}>{getDecisionLabel(item.decision)}</span>
-                  <span className="text-[10px] truncate" style={{ color: 'var(--t-text-faint)' }}>{getHostname(item.url)}</span>
-                </div>
-                <div className="text-xs truncate" style={{ color: 'var(--t-text)' }}>{item.title}</div>
-                <div className="text-[10px] truncate" style={{ color: 'var(--t-text-faint)' }}>{item.url}</div>
-                <div className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--t-text-muted)' }}>
-                  {item.aiReason}；候选原因：{item.reasons.join('、')}
-                </div>
-              </div>
-            </label>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-t" style={{ borderColor: 'var(--t-border)' }}>
-          <span className="text-[10px]" style={{ color: 'var(--t-text-muted)' }}>已选 {selectedCount} 个</span>
-          <div className="flex gap-1">
-            <button className="px-2 py-1.5 rounded text-xs" style={{ color: 'var(--t-text-muted)' }} onClick={onClose}>取消</button>
-            <button
-              className="px-2 py-1.5 rounded text-xs disabled:opacity-40"
-              style={{ color: '#ef4444' }}
-              disabled={selectedCount === 0}
-              onClick={onConfirm}
-            >
-              直接关闭
-            </button>
-            <button
-              className="px-3 py-1.5 rounded text-xs disabled:opacity-40"
-              style={{ background: '#6366f1', color: '#fff' }}
-              disabled={selectedCount === 0}
-              onClick={onStash}
-              title="关掉但存进归档，随时能恢复"
-            >
-              归档并关闭
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// --- 归档抽屉 ---
-// 标签囤积的根因不是没整理，是"关掉就找不回来"。归档让关闭这件事不再需要勇气。
-function StashDrawer({ tabs, groups, onClose, onChanged }: {
-  tabs: AppTab[]
-  groups: VirtualGroup[]
-  onClose: () => void
-  onChanged: () => void
-}) {
-  const [pane, setPane] = useState<'stash' | 'sessions' | 'closed'>('stash')
-  const [closed, setClosed] = useState<ClosedItem[]>([])
-  const [closedPerm, setClosedPerm] = useState(false)
-  const [items, setItems] = useState<StashedTab[]>([])
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [sessionName, setSessionName] = useState('')
-  const [toast, setToast] = useState<string | null>(null)
-
-  const reload = useCallback(async () => {
-    setItems(await stash.list())
-    setSessions(await storage.sessions.list())
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([stash.list(), storage.sessions.list()]).then(([s, sess]) => {
-      if (cancelled) return
-      setItems(s)
-      setSessions(sess)
-    })
-    // 最近关闭需要可选权限，已授权才加载
-    hasPermissions(['sessions']).then(async granted => {
-      if (cancelled) return
-      setClosedPerm(granted)
-      if (granted) {
-        const list = await listRecentlyClosed()
-        if (!cancelled) setClosed(list)
-      }
-    })
-    return () => { cancelled = true }
-  }, [])
-
-  // 必须由按钮点击触发，Chrome 要求权限申请在用户手势里
-  async function grantClosedPerm() {
-    const ok = await requestPermissions(['sessions'])
-    if (ok) {
-      setClosedPerm(true)
-      setClosed(await listRecentlyClosed())
-    }
-  }
-
-  async function restoreClosedItem(item: ClosedItem) {
-    const ok = await restoreSessionId(item.sessionId)
-    flash(ok ? `已恢复「${item.title}」` : '恢复失败，记录可能已过期')
-    setClosed(await listRecentlyClosed())
-    onChanged()
-  }
-
-  function flash(msg: string) {
-    setToast(msg)
-    setTimeout(() => setToast(null), 1800)
-  }
-
-  const filtered = query
-    ? items.filter(i =>
-        i.title.toLowerCase().includes(query.toLowerCase()) ||
-        i.url.toLowerCase().includes(query.toLowerCase()))
-    : items
-
-  function toggle(id: string) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  async function restoreSelected() {
-    const ids = [...selected]
-    if (ids.length === 0) return
-    await stash.restore(ids)
-    setSelected(new Set())
-    await reload()
-    onChanged()
-  }
-
-  async function removeSelected() {
-    const ids = [...selected]
-    if (ids.length === 0) return
-    await stash.remove(ids)
-    setSelected(new Set())
-    await reload()
-    onChanged()
-  }
-
-  async function copyMarkdown() {
-    const target = selected.size > 0 ? items.filter(i => selected.has(i.id)) : filtered
-    if (target.length === 0) return
-    await navigator.clipboard.writeText(toMarkdown(target))
-    flash(`已复制 ${target.length} 条为 Markdown`)
-  }
-
-  async function doSaveSession() {
-    const name = sessionName.trim() || new Date().toLocaleString('zh-CN')
-    await saveSession(name, tabs, groups)
-    setSessionName('')
-    await reload()
-    flash(`已保存会话「${name}」`)
-  }
-
-  return (
-    <div className="absolute inset-0 z-50 bg-black/50 flex items-start justify-center pt-6" onClick={onClose}>
-      <div
-        className="w-[calc(100%-12px)] max-h-[calc(100%-48px)] rounded-lg border shadow-2xl overflow-hidden flex flex-col"
-        style={{ background: 'var(--t-bg-active)', borderColor: 'var(--t-border)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--t-border)' }}>
-          <div className="flex items-center gap-1">
-            {(['stash', 'sessions', 'closed'] as const).map(p => (
-              <button
-                key={p}
-                onClick={() => setPane(p)}
-                className="px-2 py-1 rounded text-[11px]"
-                style={{
-                  background: pane === p ? 'var(--t-bg-hover)' : 'transparent',
-                  color: pane === p ? 'var(--t-text)' : 'var(--t-text-muted)',
-                }}
-              >
-                {p === 'stash' ? `归档 ${items.length}`
-                  : p === 'sessions' ? `会话 ${sessions.length}`
-                  : closedPerm ? `刚关闭 ${closed.length}` : '刚关闭'}
-              </button>
-            ))}
-          </div>
-          <button className="p-1 rounded" style={{ color: 'var(--t-text-muted)' }} onClick={onClose}>×</button>
-        </div>
-
-        {pane === 'stash' && (
-          <>
-            <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--t-border)' }}>
-              <input
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="搜索归档..."
-                className="w-full bg-transparent text-xs focus:outline-none"
-                style={{ color: 'var(--t-text)' }}
-              />
-            </div>
-
-            <div className="overflow-y-auto flex-1 p-2">
-              {filtered.length === 0 && (
-                <div className="py-8 px-4 text-center">
-                  <div className="text-xs mb-1" style={{ color: 'var(--t-text-muted)' }}>
-                    {items.length === 0 ? '归档是空的' : '没有匹配的归档'}
-                  </div>
-                  {items.length === 0 && (
-                    <div className="text-[10px] leading-relaxed" style={{ color: 'var(--t-text-faint)' }}>
-                      在标签右键菜单里选「归档并关闭」，或在分组标题上点归档图标。
-                      归档过的页面随时能一键恢复，所以关标签不用再犹豫。
-                    </div>
-                  )}
-                </div>
-              )}
-              {filtered.map(item => (
-                <label key={item.id} className="flex gap-2 p-1.5 rounded cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(item.id)}
-                    onChange={() => toggle(item.id)}
-                    className="mt-1 shrink-0"
-                  />
-                  {item.favIconUrl ? (
-                    <img src={item.favIconUrl} alt="" className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-sm" />
-                  ) : (
-                    <div className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-sm" style={{ background: 'var(--t-border)' }} />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] truncate" style={{ color: 'var(--t-text)' }}>{item.title}</div>
-                    <div className="flex items-center gap-1.5 text-[9px]" style={{ color: 'var(--t-text-faint)' }}>
-                      <span>{formatStashedAt(item.stashedAt)}</span>
-                      {item.groupTitle && <span>· {item.groupTitle}</span>}
-                      {item.auto && <span>· 自动归档</span>}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between gap-2 px-3 py-2 border-t" style={{ borderColor: 'var(--t-border)' }}>
-              <span className="text-[10px]" style={{ color: 'var(--t-text-muted)' }}>
-                {toast ?? (selected.size > 0 ? `已选 ${selected.size} 条` : '选中后可恢复或导出')}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  className="px-2 py-1.5 rounded text-[11px]"
-                  style={{ color: 'var(--t-text-muted)' }}
-                  onClick={copyMarkdown}
-                >
-                  复制 MD
-                </button>
-                <button
-                  className="px-2 py-1.5 rounded text-[11px] disabled:opacity-40"
-                  style={{ color: '#ef4444' }}
-                  disabled={selected.size === 0}
-                  onClick={removeSelected}
-                >
-                  删除
-                </button>
-                <button
-                  className="px-3 py-1.5 rounded text-[11px] disabled:opacity-40"
-                  style={{ background: '#6366f1', color: '#fff' }}
-                  disabled={selected.size === 0}
-                  onClick={restoreSelected}
-                >
-                  恢复
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {pane === 'sessions' && (
-          <>
-            <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--t-border)' }}>
-              <input
-                value={sessionName}
-                onChange={e => setSessionName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') doSaveSession() }}
-                placeholder="会话名称（留空用当前时间）"
-                className="flex-1 bg-transparent text-xs focus:outline-none"
-                style={{ color: 'var(--t-text)' }}
-              />
-              <button
-                className="px-2 py-1 rounded text-[11px] shrink-0"
-                style={{ background: '#6366f1', color: '#fff' }}
-                onClick={doSaveSession}
-              >
-                保存当前
-              </button>
-            </div>
-
-            <div className="overflow-y-auto flex-1 p-2">
-              {sessions.length === 0 && (
-                <div className="py-8 text-center text-xs" style={{ color: 'var(--t-text-muted)' }}>
-                  还没有保存过会话
-                </div>
-              )}
-              {sessions.map(s => (
-                <div key={s.id} className="flex items-center gap-2 p-2 rounded">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] truncate" style={{ color: 'var(--t-text)' }}>{s.name}</div>
-                    <div className="text-[9px]" style={{ color: 'var(--t-text-faint)' }}>
-                      {s.tabs.length} 个标签 · {formatStashedAt(s.createdAt)}
-                    </div>
-                  </div>
-                  <button
-                    className="px-2 py-1 rounded text-[10px] shrink-0"
-                    style={{ background: 'var(--t-bg-hover)', color: 'var(--t-text-secondary)' }}
-                    onClick={async () => { await restoreSession(s.id); flash(`已恢复「${s.name}」`) }}
-                  >
-                    恢复
-                  </button>
-                  <button
-                    className="px-2 py-1 rounded text-[10px] shrink-0"
-                    style={{ color: '#ef4444' }}
-                    onClick={async () => { await deleteSession(s.id); await reload() }}
-                  >
-                    删除
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {toast && (
-              <div className="px-3 py-2 border-t text-[10px]" style={{ borderColor: 'var(--t-border)', color: 'var(--t-text-muted)' }}>
-                {toast}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* 刚关闭：归档管有意关的，这里管手滑关的 */}
-        {pane === 'closed' && (
-          <>
-            <div className="overflow-y-auto flex-1 p-2">
-              {!closedPerm && (
-                <div className="py-6 px-4 text-center">
-                  <div className="text-xs mb-2" style={{ color: 'var(--t-text-secondary)' }}>
-                    找回误关的标签页
-                  </div>
-                  <div className="text-[10px] leading-relaxed mb-3" style={{ color: 'var(--t-text-faint)' }}>
-                    需要「最近关闭的标签」权限，只在你打开这个页签时读取，不会上传。
-                    授权一次长期有效，可随时在设置页收回。
-                  </div>
-                  <button
-                    className="px-3 py-1.5 rounded text-[11px]"
-                    style={{ background: '#6366f1', color: '#fff' }}
-                    onClick={grantClosedPerm}
-                  >
-                    授权并查看
-                  </button>
-                </div>
-              )}
-              {closedPerm && closed.length === 0 && (
-                <div className="py-8 text-center text-xs" style={{ color: 'var(--t-text-muted)' }}>
-                  最近没有关闭过标签
-                </div>
-              )}
-              {closedPerm && closed.map(item => (
-                <div key={item.sessionId} className="flex items-center gap-2 p-2 rounded">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] truncate" style={{ color: 'var(--t-text)' }}>{item.title}</div>
-                    <div className="flex items-center gap-1.5 text-[9px]" style={{ color: 'var(--t-text-faint)' }}>
-                      <span>{formatStashedAt(item.closedAt)}关闭</span>
-                      {item.url && <span className="truncate">· {item.url}</span>}
-                    </div>
-                  </div>
-                  <button
-                    className="px-2 py-1 rounded text-[10px] shrink-0"
-                    style={{ background: 'var(--t-bg-hover)', color: 'var(--t-text-secondary)' }}
-                    onClick={() => restoreClosedItem(item)}
-                  >
-                    恢复
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {toast && (
-              <div className="px-3 py-2 border-t text-[10px]" style={{ borderColor: 'var(--t-border)', color: 'var(--t-text-muted)' }}>
-                {toast}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
   )
 }
 

@@ -26,6 +26,15 @@
   "action": {
     "default_title": "Side Tabs"
   },
+  "commands": {
+    "toggle-panel": {
+      "suggested_key": {
+        "default": "Alt+Shift+T",
+        "mac": "Command+Shift+E"
+      },
+      "description": "打开 Side Tabs 面板"
+    }
+  },
   "side_panel": {
     "default_path": "index.html"
   },
@@ -33,6 +42,19 @@
     "service_worker": "src/background/service-worker.ts",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/orb.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["orb.html", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "options_page": "options.html",
   "icons": {
     "16": "public/icons/icon16.png",

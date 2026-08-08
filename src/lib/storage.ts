@@ -10,10 +10,10 @@ const KEYS = {
 
 const DEFAULT_CONFIG: AppConfig = {
   ai: { baseURL: '', apiKey: '', model: 'deepseek-chat', enabled: false, customPrompt: '' },
-  grouping: { autoThreshold: 10, throttleMs: 30000, rules: [] },
+  grouping: { rules: [] },
   suspend: { enabled: false, idleMinutes: 90, whitelist: [] },
   stash: { autoEnabled: false, autoDays: 7 },
-  ui: { theme: 'dark', density: 'comfortable' },
+  ui: { theme: 'dark', density: 'comfortable', mode: 'sidepanel' },
 }
 
 // 通用 get/set for chrome.storage.local

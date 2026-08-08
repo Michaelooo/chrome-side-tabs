@@ -16,6 +16,7 @@ export default defineConfig({
         options: 'options.html',
         onboarding: 'onboarding.html',
         perf: 'perf.html',
+        orb: 'orb.html',
       },
     },
   },
