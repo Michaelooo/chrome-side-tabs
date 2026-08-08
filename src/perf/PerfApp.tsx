@@ -9,6 +9,7 @@ import {
   formatBytes, formatCount, formatIdle,
 } from '../lib/perf-probe'
 import type { TabMetrics, ScanStats } from '../lib/perf-probe'
+import { putScan } from '../lib/perf-store'
 
 const GROUP_ACCENT: Record<GroupColor, string> = {
   blue: '#5b8def',
@@ -113,12 +114,23 @@ export default function PerfApp() {
       const result = await scanTabs(targets, (done, total) => setProgress({ done, total }))
       setMetrics(result.metrics)
       setStats(result.stats)
+      // 存进会话缓存，AI 助手问起占用时直接复用，不用把所有标签重扫一遍
+      await putScan(result)
     } catch (err) {
       setError(String(err))
     } finally {
       setScanning(false)
     }
   }, [scanning])
+
+  // 扫描结果已经在会话缓存里，这里只把话题带过去。
+  // 助手那边的 scanPerf 查询会复用同一份缓存，不会把所有标签重扫一遍。
+  function askAI() {
+    const q = '分析一下这些标签的占用：哪些最重、哪些又重又没人看？该关掉或休眠哪些最划算？'
+    chrome.tabs.create({
+      url: chrome.runtime.getURL(`orb.html?standalone=1&ask=${encodeURIComponent(q)}`),
+    })
+  }
 
   const measured = useMemo(() => metrics.filter(m => m.measured), [metrics])
   const unmeasured = useMemo(() => metrics.filter(m => !m.measured), [metrics])
@@ -272,6 +284,16 @@ export default function PerfApp() {
             >
               {theme === 'dark' ? '浅色' : '深色'}
             </button>
+            {metrics.length > 0 && !scanning && (
+              <button
+                onClick={askAI}
+                className="px-3 py-2 rounded text-xs"
+                style={{ background: 'var(--t-bg-active)', color: 'var(--t-text-secondary)' }}
+                title="把这份扫描结果交给 AI 助手，让它给出该关掉/休眠哪些的建议"
+              >
+                让 AI 分析
+              </button>
+            )}
             <button
               onClick={runScan}
               disabled={scanning}

@@ -4,6 +4,7 @@ import { buildApiUrl } from './ai-client'
 import { missingPermissions, permissionsForLookup } from './permissions'
 import { readPages, MAX_READ_TABS } from './page-reader'
 import { listRecentlyClosed } from './recently-closed'
+import { getOrScan, formatForAI } from './perf-store'
 import type { OptionalPermission } from './permissions'
 
 export type AssistantAction =
@@ -37,6 +38,8 @@ export interface AssistantLookup {
   readTabIds?: number[]
   /** 查最近关闭的标签列表 */
   recentlyClosed?: boolean
+  /** 扫描各标签的内存与资源占用。5 分钟内扫过的会直接复用缓存 */
+  scanPerf?: boolean
 }
 
 export interface AssistantReply {
@@ -125,6 +128,7 @@ const SYSTEM_PROMPT = `你是浏览器标签助手，帮用户理解和整理他
 - {"lookup": {"bookmarks": "关键词"}} 查书签
 - {"lookup": {"readTabIds": [123, 456]}} 读取这些标签的页面正文，最多 4 个。用户要总结页面、比较几个页面、问"哪个页面提到了 X"时用这个——你能读到真实内容，不要只凭标题猜
 - {"lookup": {"recentlyClosed": true}} 查最近关闭的标签列表
+- {"lookup": {"scanPerf": true}} 扫描各标签的内存与资源占用，拿到重量分、浪费分、JS 堆、DOM 节点数、图片位图体积。用户问"哪些标签吃内存""哪个页面最重""浏览器为什么这么卡""该关掉哪些最划算"时用这个——**不要凭标题猜测占用，标题看不出来一个页面有多重**
 
 判断准则：
 - **只要你在 answer 里说了要做某件事，就必须同时给出对应的 action。绝对不能只说不做**——用户看不到你的想法，只能看到实际发生的事。如果你做不到，就在 answer 里直接说做不到和原因，不要假装要去做。
@@ -493,6 +497,7 @@ function sanitize(raw: unknown, tabs: AppTab[]): AssistantReply {
       if (ids.length > 0) next.readTabIds = ids
     }
     if (l.recentlyClosed === true) next.recentlyClosed = true
+    if (l.scanPerf === true) next.scanPerf = true
     if (Object.keys(next).length > 0) lookup = next
   }
 
@@ -554,9 +559,22 @@ async function callModel(
   }
 }
 
-async function runLookup(lookup: AssistantLookup): Promise<string> {
+async function runLookup(
+  lookup: AssistantLookup,
+  onProgress?: (msg: string) => void,
+): Promise<string> {
   const parts: string[] = []
 
+  if (lookup.scanPerf) {
+    try {
+      const { scan, fromCache } = await getOrScan({
+        onProgress: (done, total) => onProgress?.(`正在测量标签占用 ${done}/${total}...`),
+      })
+      parts.push(formatForAI(scan) + (fromCache ? '\n（复用了几分钟前的扫描结果，未重新测量）' : ''))
+    } catch (err) {
+      parts.push(`性能扫描失败：${(err as Error).message}`)
+    }
+  }
 
   if (lookup.history) {
     try {
@@ -623,6 +641,8 @@ export async function askAssistant(
   origins: Record<number, TabOrigin>,
   history: ChatTurn[],
   config: AppConfig,
+  /** 查询阶段的进度。性能扫描可能要跑几秒，不报进度看起来像卡死 */
+  onProgress?: (msg: string) => void,
 ): Promise<{ data: AssistantReply | null; error?: string; missingPermissions?: OptionalPermission[] }> {
   if (!config.ai.enabled || !config.ai.apiKey || !config.ai.baseURL) {
     return { data: null, error: 'AI 未配置，请先在设置页填写 API 信息' }
@@ -653,7 +673,8 @@ export async function askAssistant(
       return { data: reply, missingPermissions: missing }
     }
 
-    const found = await runLookup(reply.lookup)
+    const found = await runLookup(reply.lookup, onProgress)
+    onProgress?.('思考中...')
     const second = await callModel([
       ...messages,
       { role: 'assistant', content: JSON.stringify({ answer: reply.answer, lookup: reply.lookup }) },
