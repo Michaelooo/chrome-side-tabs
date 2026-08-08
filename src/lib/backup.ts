@@ -38,7 +38,7 @@ export function downloadBackup(backup: BackupFile) {
   const a = document.createElement('a')
   const stamp = new Date(backup.exportedAt).toISOString().slice(0, 10)
   a.href = url
-  a.download = `side-tabs-backup-${stamp}.json`
+  a.download = `sift-backup-${stamp}.json`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -54,7 +54,7 @@ export interface ImportResult {
  */
 export async function importBackup(file: BackupFile): Promise<ImportResult> {
   if (file?.format !== 'side-tabs-backup') {
-    throw new Error('这不是 Side Tabs 的备份文件')
+    throw new Error('这不是 Sift 的备份文件')
   }
 
   const current = await chrome.storage.local.get([...BACKUP_KEYS])

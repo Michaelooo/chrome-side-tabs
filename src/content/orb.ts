@@ -140,7 +140,7 @@ function mount() {
   handle = document.createElement('button')
   handle.className = 'handle'
   // 不在这写快捷键：它可能被用户改过，写死就成了假话。真实绑定在设置页里显示
-  handle.title = 'Side Tabs — AI 整理标签'
+  handle.title = 'Sift — AI 整理标签'
   handle.innerHTML = MARK
   handle.addEventListener('click', e => { e.stopPropagation(); togglePanel('handle') })
   shadow.appendChild(handle)

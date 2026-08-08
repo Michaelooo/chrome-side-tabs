@@ -87,7 +87,7 @@ export function OptionsApp() {
   return (
     <div style={css.page}>
       <header style={css.header}>
-        <h1 style={css.headerTitle}>Side Tabs</h1>
+        <h1 style={css.headerTitle}>Sift</h1>
         <p style={css.headerSub}>设置</p>
       </header>
 
@@ -141,7 +141,7 @@ export function OptionsApp() {
                   <div style={css.field}>
                     <span style={css.label}>工具栏图标徽标</span>
                     <span style={css.hint}>
-                      未分组标签攒到 8 个以上，Chrome 工具栏上的 Side Tabs 图标右下角会出现一个数字角标
+                      未分组标签攒到 8 个以上，Chrome 工具栏上的 Sift 图标右下角会出现一个数字角标
                       （像 App 图标上的未读数）。点图标即从左边滑出面板。平时不显示——它是行动信号，不是常年挂着的计数器。
                       <strong>前提是扩展图标已固定在工具栏上</strong>，收在拼图菜单里就看不见了。
                     </span>

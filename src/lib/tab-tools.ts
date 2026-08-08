@@ -33,7 +33,7 @@ async function syncToBrowser(windowId: number, groups: VirtualGroup[]) {
   try {
     await applyGroupsToBrowser(windowId, groups)
   } catch (err) {
-    console.error('[SideTabs] Failed to sync groups to browser:', err)
+    console.error('[Sift] Failed to sync groups to browser:', err)
   }
 }
 

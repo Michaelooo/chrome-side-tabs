@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Side Tabs — AI 驱动的 Chrome 侧边栏标签管理</title>
-  <meta name="description" content="把标签栏搬进侧边栏，让 AI 帮你整理。基于 Manifest V3 Side Panel 的 Chrome 扩展，支持 AI 智能分组、丰富个性化配置、标签休眠省内存。" />
+  <title>Sift — 替你判断标签的 AI 管家</title>
+  <meta name="description" content="Sift 是一个 AI 标签管家。Chrome 原生垂直标签栏负责渲染，Sift 负责判断：语义自动分组、智能清理、对话式整理、归档不丢、性能账单。基于 Manifest V3，数据本地存储。" />
   <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,8 +13,8 @@
   <header class="nav">
     <div class="nav__inner">
       <a class="brand" href="#top">
-        <img class="brand__logo" src="assets/icon.svg" alt="Side Tabs" width="28" height="28" />
-        <span class="brand__name">Side Tabs</span>
+        <img class="brand__logo" src="assets/icon.svg" alt="Sift" width="28" height="28" />
+        <span class="brand__name">Sift</span>
       </a>
       <nav class="nav__links">
         <a href="#features">功能</a>
@@ -39,9 +39,9 @@
       <div class="hero__bg" aria-hidden="true"></div>
       <div class="hero__inner reveal">
         <div class="hero__copy">
-          <span class="eyebrow">Chrome 扩展 · Manifest V3 Side Panel</span>
-          <h1 class="hero__title">把标签栏搬进侧边栏，<br />让 <span class="grad">AI</span> 帮你整理</h1>
-          <p class="hero__sub">告别拥挤的顶部标签栏。Side Tabs 把所有标签竖向罗列在侧边栏，用 AI 按语义自动归组，闲置标签自动休眠省内存，分组规则与接口细节都能在选项页按你的习惯精调。</p>
+          <span class="eyebrow">Chrome 扩展 · Manifest V3 · 配合原生垂直标签栏</span>
+          <h1 class="hero__title">它不替你<span class="grad">排列</span>标签，<br />它替你<span class="grad">判断</span>标签</h1>
+          <p class="hero__sub">Chrome 145+ 已经原生支持垂直标签栏，纵向列表和标签组浏览器自己做得更好。Sift 不跟它抢渲染层，只做原生没有的那一半：这些标签是什么、哪些在摸鱼、哪些又重又没人看、该关掉哪些最划算、关掉的东西去哪儿找回来。</p>
           <div class="hero__cta">
             <a class="btn btn--primary" href="#install">查看安装步骤</a>
             <a class="btn btn--ghost" href="https://github.com/Michaelooo/chrome-side-tabs" target="_blank" rel="noopener">GitHub 源码</a>
@@ -56,10 +56,10 @@
           <div class="browser-frame">
             <div class="browser-bar">
               <span class="dot dot--r"></span><span class="dot dot--y"></span><span class="dot dot--g"></span>
-              <div class="browser-omni">chrome://side-tabs</div>
+              <div class="browser-omni">sift — AI 标签管家</div>
             </div>
             <div class="browser-body">
-              <img class="shot" src="assets/screenshots/hero.png" alt="Side Tabs 侧边栏界面" onerror="this.replaceWith(buildMock())" />
+              <img class="shot" src="assets/screenshots/hero.png" alt="Sift 界面" onerror="this.replaceWith(buildMock())" />
             </div>
           </div>
         </div>
@@ -69,55 +69,54 @@
     <!-- ===== Features ===== -->
     <section id="features" class="section">
       <div class="section__head reveal">
-        <h2>一个侧边栏，搞定标签的一切</h2>
-        <p>从智能整理到内存优化，再到可按习惯微调的选项页。</p>
+        <h2>浏览器负责渲染，Sift 负责判断</h2>
+        <p>重合的部分交给原生，剩下的才是它该干的。</p>
       </div>
       <div class="features reveal">
-        <article class="card" style="--accent:#3b82f6">
-          <div class="card__icon">▤</div>
-          <h3>纵向标签列表</h3>
-          <p>侧边栏竖向罗列所有标签，标题完整可读，告别顶部挤成一团的标签栏。</p>
-        </article>
         <article class="card" style="--accent:#a855f7">
           <div class="card__icon">✦</div>
-          <h3>AI 智能分组</h3>
-          <p>接入 OpenAI 兼容接口（DeepSeek / OpenAI），按语义自动归组，支持自定义提示词。</p>
+          <h3>AI 语义分组</h3>
+          <p>接入 DeepSeek / OpenAI 兼容端点按语义归组。规则先行、缓存复用，只有没见过的标签才送给 AI，省 token 也更快。</p>
         </article>
-        <article class="card" style="--accent:#06b6d4">
-          <div class="card__icon">⤲</div>
-          <h3>域名分组兜底</h3>
-          <p>AI 不可用时自动按域名归组，零配置也能保持井井有条。</p>
-        </article>
-        <article class="card card--soon" style="--accent:#22c55e">
-          <span class="card__badge">开发中</span>
-          <div class="card__icon">⌘</div>
-          <h3>Cmd / Ctrl + K 搜索</h3>
-          <p>全局快捷键唤起命令面板，模糊搜索、秒级跳转到任意标签。功能正在开发，敬请期待。</p>
-        </article>
-        <article class="card" style="--accent:#f97316">
-          <div class="card__icon">☾</div>
-          <h3>标签休眠</h3>
-          <p>闲置标签自动挂起，可设空闲时长与白名单域名，显著降低内存占用。</p>
-        </article>
-        <article class="card" style="--accent:#eab308">
-          <div class="card__icon">⚙</div>
-          <h3>丰富个性化配置</h3>
-          <p>AI 接口、自定义提示词、自动分组阈值、休眠策略——选项页里每一项都能按你的工作流微调。</p>
+        <article class="card" style="--accent:#22d3ee">
+          <div class="card__icon">◆</div>
+          <h3>可对话的标签助手</h3>
+          <p>「哪些标签在摸鱼」「总结我正在看的页面」「恢复我刚关掉的」——问答与操作一体，改动类操作一律先预览再确认。</p>
         </article>
         <article class="card" style="--accent:#ec4899">
           <div class="card__icon">⧉</div>
           <h3>原生标签组同步</h3>
-          <p>虚拟分组同步到 Chrome 原生标签组（含颜色与折叠状态），重启后按 URL 兜底重连。</p>
+          <p>分组结果直接写进 Chrome 原生标签组，含颜色与折叠状态。整理效果就在浏览器自己的标签栏里，不画第二份列表。</p>
+        </article>
+        <article class="card" style="--accent:#22c55e">
+          <div class="card__icon">▣</div>
+          <h3>归档抽屉</h3>
+          <p>标签囤积的根因不是没整理，是「关掉就找不回来」。归档让关闭这件事不再需要勇气，随时可搜索、批量恢复、导出 Markdown。</p>
+        </article>
+        <article class="card" style="--accent:#f97316">
+          <div class="card__icon">⌫</div>
+          <h3>智能清理</h3>
+          <p>AI 逐个判断哪些可以清理并给出理由，默认动作是归档而不是关闭——判断错了也不会真的丢东西。</p>
+        </article>
+        <article class="card" style="--accent:#3b82f6">
+          <div class="card__icon">⚡</div>
+          <h3>标签性能账单</h3>
+          <p>实测每个标签的 JS 堆、DOM 节点与图片位图，算出重量分与浪费分。不扫描时常驻开销为 0，扫完还能交给 AI 给关闭建议。</p>
         </article>
         <article class="card" style="--accent:#818cf8">
-          <div class="card__icon">◐</div>
-          <h3>明暗主题</h3>
-          <p>一键切换浅色 / 深色界面，偏好本地持久化，跟随你的使用习惯。</p>
+          <div class="card__icon">⌘</div>
+          <h3>快捷键召唤</h3>
+          <p>面板不常驻，任意页面一个快捷键唤起。常驻挂件有个死结：低调到不烦人，就一定低调到看不见。</p>
+        </article>
+        <article class="card" style="--accent:#eab308">
+          <div class="card__icon">☾</div>
+          <h3>休眠与自动归档</h3>
+          <p>闲置标签自动挂起省内存；超过设定天数没访问的自动收进归档并关闭——休眠只省内存，归档才省注意力。</p>
         </article>
         <article class="card" style="--accent:#ef4444">
-          <div class="card__icon">✨</div>
-          <h3>打磨细节</h3>
-          <p>macOS Dock 风格鱼眼放大、关闭按钮迸发彩蛋动画，每一次交互都顺手。</p>
+          <div class="card__icon">⤳</div>
+          <h3>来源链路</h3>
+          <p>记录每个标签是从哪儿点开的，串成树。顺着一条链看完，也能整条关掉。</p>
         </article>
       </div>
     </section>
@@ -133,7 +132,7 @@
         <div class="showcase__text">
           <span class="eyebrow">AI 智能分组</span>
           <h3>一键让标签各归各位</h3>
-          <p>当打开的标签超过设定阈值，Side Tabs 调用你配置的大模型，按语义把「工作文档」「社交媒体」「技术资料」分门别类，并同步成 Chrome 原生标签组。</p>
+          <p>点一下，Sift 调用你配置的大模型，按语义把「工作文档」「社交媒体」「技术资料」分门别类，并同步成 Chrome 原生标签组——所以整理结果直接呈现在浏览器自己的标签栏里。自定义规则命中的标签完全不发给 AI，既省 token，结果也确定。</p>
         </div>
         <div class="showcase__img">
           <div class="browser-frame">
@@ -144,14 +143,14 @@
 
       <div class="showcase showcase--rev reveal">
         <div class="showcase__text">
-          <span class="eyebrow eyebrow--muted">命令面板 · 开发中</span>
+          <span class="eyebrow">搜索与键盘导航</span>
           <h3>Cmd + K，标签秒级直达</h3>
-          <p>无论开了多少标签，一个快捷键唤起搜索，模糊匹配标题与网址，回车即跳转。键盘流的高效体验正在打磨中，即将推出。</p>
+          <p>无论开了多少标签，一个快捷键唤起搜索，模糊匹配标题与网址，回车即跳转。列表里还能用 <code>j</code> / <code>k</code> 上下移动、<code>x</code> 关闭、回车跳转，全程不用碰鼠标。</p>
         </div>
         <div class="showcase__img">
           <div class="browser-frame">
             <div class="browser-body">
-              <div class="soon-panel" aria-label="命令面板功能开发中">
+              <div class="soon-panel" aria-label="命令面板界面预览">
                 <div class="soon-panel__hint">
                   <kbd>⌘</kbd><span class="soon-panel__plus">+</span><kbd>K</kbd>
                 </div>
@@ -164,10 +163,6 @@
                   <div class="soon-panel__row soon-panel__row--active"><span class="soon-panel__fav"></span><span class="soon-panel__bar" style="flex:0.65"></span></div>
                   <div class="soon-panel__row"><span class="soon-panel__fav"></span><span class="soon-panel__bar" style="flex:0.74"></span></div>
                 </div>
-                <div class="soon-panel__overlay">
-                  <span class="soon-badge">即将推出</span>
-                  <span class="soon-panel__caption">命令面板开发中</span>
-                </div>
               </div>
             </div>
           </div>
@@ -178,12 +173,13 @@
         <div class="showcase__text">
           <span class="eyebrow">个性化配置</span>
           <h3>按你的习惯，精调每一处细节</h3>
-          <p>扩展选项页集中管理 AI 分组、提示词与性能策略。接口地址、模型、阈值、休眠白名单都可以自由设定，全部存储在本地浏览器，不经过任何第三方服务器。</p>
+          <p>设置页按「界面 / AI 服务 / 分组 / 自动整理 / 权限与数据」五类划分。API Key 只存在 <code>chrome.storage.local</code>，除了你自己配置的 AI 端点，数据不发往任何地方。</p>
           <ul class="config-highlights">
-            <li><strong>AI 接口</strong> — 接入 DeepSeek、OpenAI 等 OpenAI 兼容端点</li>
-            <li><strong>自定义提示词</strong> — 追加你的分组规则，如「协作文档」「开发工具」</li>
-            <li><strong>自动分组阈值</strong> — 标签数达到设定值时自动触发 AI 整理</li>
-            <li><strong>标签休眠</strong> — 空闲时长、白名单域名，按需释放内存</li>
+            <li><strong>界面形态</strong> — 侧边栏或页面浮球，按你用不用原生垂直标签栏来选</li>
+            <li><strong>AI 端点</strong> — 接入 DeepSeek、OpenAI 等 OpenAI 兼容端点</li>
+            <li><strong>分组规则</strong> — 命中规则的标签直接归组，完全不发给 AI</li>
+            <li><strong>自动整理</strong> — 休眠空闲时长、自动归档天数，按需释放内存与注意力</li>
+            <li><strong>可选权限</strong> — 历史、书签、最近关闭，用到才申请，随时可收回</li>
           </ul>
         </div>
         <div class="showcase__img">
@@ -191,7 +187,7 @@
             <div class="browser-body">
               <div class="config-mock" aria-label="选项页配置预览">
                 <div class="config-mock__head">
-                  <span class="config-mock__title">Side Tabs</span>
+                  <span class="config-mock__title">Sift</span>
                   <span class="config-mock__sub">设置</span>
                 </div>
 
@@ -224,17 +220,17 @@
                 </div>
 
                 <div class="config-mock__section">
-                  <div class="config-mock__section-title">分组设置 · 标签休眠</div>
+                  <div class="config-mock__section-title">自动整理</div>
                   <div class="config-mock__card config-mock__card--split">
                     <div class="config-mock__metric">
-                      <span class="config-mock__label">自动分组阈值</span>
-                      <span class="config-mock__value">10 个标签</span>
-                      <span class="config-mock__track"><span class="config-mock__fill" style="width:18%"></span></span>
+                      <span class="config-mock__label">空闲休眠</span>
+                      <span class="config-mock__value">90 分钟</span>
+                      <span class="config-mock__track"><span class="config-mock__fill" style="width:74%"></span></span>
                     </div>
                     <div class="config-mock__metric">
-                      <span class="config-mock__label">空闲休眠</span>
-                      <span class="config-mock__value">30 分钟</span>
-                      <span class="config-mock__track"><span class="config-mock__fill config-mock__fill--green" style="width:24%"></span></span>
+                      <span class="config-mock__label">自动归档</span>
+                      <span class="config-mock__value">7 天未访问</span>
+                      <span class="config-mock__track"><span class="config-mock__fill config-mock__fill--green" style="width:23%"></span></span>
                     </div>
                   </div>
                 </div>
@@ -267,8 +263,8 @@
           <div class="step__body">
             <h3>安装依赖并构建</h3>
             <div class="code">
-              <code>npm install &amp;&amp; npm run build</code>
-              <button class="copy-btn" data-copy="npm install && npm run build">复制</button>
+              <code>pnpm install &amp;&amp; pnpm build</code>
+              <button class="copy-btn" data-copy="pnpm install && pnpm build">复制</button>
             </div>
           </div>
         </li>
@@ -283,7 +279,7 @@
           <div class="step__num">4</div>
           <div class="step__body">
             <h3>个性化配置（可选）</h3>
-            <p>右键扩展图标 →「选项」，或从侧边栏进入设置页。可配置 AI 接口与模型、追加自定义分组提示词、调整自动分组阈值，以及标签休眠的空闲时长与白名单。不填 API Key 则默认按域名分组。</p>
+            <p>右键扩展图标 →「选项」进入设置页。先在「界面」里选形态：用 Chrome 原生垂直标签栏就选<strong>页面浮球</strong>，还在用水平标签栏就选<strong>侧边栏</strong>。再到「AI 服务」填入接口与模型。不填 API Key 则回退到按主域名与标题词重叠的本地聚类。</p>
           </div>
         </li>
       </ol>
@@ -295,7 +291,7 @@
     <div class="footer__inner">
       <div class="footer__brand">
         <img src="assets/icon.svg" alt="" width="24" height="24" />
-        <span>Side Tabs</span>
+        <span>Sift</span>
       </div>
       <p class="footer__tech">React 19 · Vite · Tailwind CSS v4 · Manifest V3</p>
       <a class="footer__gh" href="https://github.com/Michaelooo/chrome-side-tabs" target="_blank" rel="noopener">GitHub</a>
