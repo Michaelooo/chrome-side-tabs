@@ -33,6 +33,9 @@ interface Message {
   retryQuestion?: string
 }
 
+/** 超过这个时间没动过的对话不再自动接上——那多半已经是另一件事了 */
+const RESUME_WINDOW_MS = 2 * 60 * 60 * 1000
+
 const SUGGESTIONS = [
   '哪些标签在摸鱼？',
   '哪些标签最吃内存？',
@@ -135,6 +138,9 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
   const [confirmClear, setConfirmClear] = useState(false)
   const createdAtRef = useRef(Date.now())
   const seedSent = useRef(false)
+  const resumed = useRef(false)
+  const messagesRef = useRef<Message[]>([])
+  const busyRef = useRef(false)
   // 侧栏列表只显示当前窗口，但助手必须看到所有窗口的标签，
   // 否则用户在别的窗口开的页面会被当成"不存在"。
   const [tabs, setTabs] = useState<AppTab[]>(windowTabs)
@@ -160,6 +166,9 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [preview])
+
+  useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { busyRef.current = busy }, [busy])
 
   const persist = useCallback(async (msgs: Message[]) => {
     if (msgs.length === 0) return
@@ -234,7 +243,9 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
 
     setInput('')
     setBusy(true)
+    busyRef.current = true
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', text: question }
+    messagesRef.current = [...messagesRef.current, userMsg]
     setMessages(prev => [...prev, userMsg])
 
     try {
@@ -317,6 +328,7 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
         id: `a-${Date.now()}`, role: 'assistant', error: true, text: String(err),
       }])
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }, [busy, messages, tabs, groups, origins, onSelect, onGroup, onChanged, syncTabs])
@@ -327,6 +339,26 @@ export default function Assistant({ tabs: windowTabs, groups, origins, onSelect,
     seedSent.current = true
     send(seedQuestion)
   }, [seedQuestion, send])
+
+  /**
+   * 挂载时接上刚才那轮对话。
+   * 面板是按标签页各挂一份的，换个标签页打开就是全新实例——但用户的思路没换，
+   * 不该因为切了个页面就从头说起。太久以前的不接，那时多半是另一件事了。
+   */
+  useEffect(() => {
+    if (seedQuestion || resumed.current) return
+    resumed.current = true
+    chatStore.list().then(sessions => {
+      const last = sessions[0]
+      if (!last || last.messages.length === 0) return
+      if (Date.now() - last.updatedAt > RESUME_WINDOW_MS) return
+      if (messagesRef.current.length > 0 || busyRef.current) return
+      setMessages(last.messages.map(m => ({ ...m })))
+      // 自动恢复只复制上下文，不争用原会话 ID；多个持久面板各自续写自己的分支。
+      setChatId(makeChatId())
+      createdAtRef.current = Date.now()
+    })
+  }, [seedQuestion])
 
   /** 必须由按钮点击直接触发，Chrome 要求 request 在用户手势里调用 */
   async function grantAndRetry(msg: Message) {
