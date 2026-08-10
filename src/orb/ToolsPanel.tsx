@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AppTab, VirtualGroup, GroupColor } from '../types/entities'
 import { queryTabsInWindow, queryAllTabs } from '../lib/tab-manager'
 import { runGrouping, createGroup, buildCleanupItems, loadGroups } from '../lib/tab-tools'
+import { storage } from '../lib/storage'
 import type { CleanupItem } from '../lib/tab-tools'
 import { stash, stashAndClose } from '../lib/stash'
 import { provenance } from '../lib/provenance'
@@ -57,7 +58,16 @@ export default function ToolsPanel() {
   const [stashOpen, setStashOpen] = useState(false)
   // 助手指出来的标签。侧栏里这是列表行高亮，这里没有列表，只能自己列出来
   const [picked, setPicked] = useState<AppTab[]>([])
+  // 宿主把面板藏起来时置为 false，用来停掉后台刷新
+  const [visible, setVisible] = useState(STANDALONE)
   const themeLoaded = useRef(false)
+
+  useEffect(() => {
+    if (STANDALONE) return
+    storage.config.get().then(({ ui }) => {
+      if (ui.mode !== 'orb') closeSelf()
+    })
+  }, [])
 
   useEffect(() => {
     chrome.storage.local.get('theme').then(({ theme: saved }) => {
@@ -84,12 +94,26 @@ export default function ToolsPanel() {
 
   useEffect(() => {
     if (windowId == null) return
-    refresh()
+    // refresh 由下面那个 visible 的 effect 负责，这里只补分组
     loadGroups(windowId).then(saved => { if (saved.length > 0) setGroups(saved) })
-  }, [windowId, refresh])
+  }, [windowId])
 
-  // 面板开着的时候标签数要跟得上
+  // 收起时 iframe 不销毁（否则对话每次都从头开始），但也不能继续跟着标签事件空转。
+  // 宿主收起/展开时会 postMessage 过来。独立标签页没有宿主，恒为可见。
   useEffect(() => {
+    if (STANDALONE) return
+    function onHostMessage(e: MessageEvent) {
+      if (e.data?.source !== 'sift-host') return
+      setVisible(!!e.data.visible)
+    }
+    window.addEventListener('message', onHostMessage)
+    return () => window.removeEventListener('message', onHostMessage)
+  }, [])
+
+  // 面板开着的时候标签数要跟得上；收起后停掉
+  useEffect(() => {
+    if (!visible) return
+    refresh()
     const events = [
       chrome.tabs.onCreated, chrome.tabs.onRemoved, chrome.tabs.onUpdated,
       chrome.tabs.onAttached, chrome.tabs.onDetached,
@@ -104,7 +128,7 @@ export default function ToolsPanel() {
       events.forEach(e => e.removeListener(handler))
       clearTimeout(timer)
     }
-  }, [refresh])
+  }, [refresh, visible])
 
   // 焦点在面板里时 ESC 收起整个浮球面板（内容脚本那边收不到这个按键）
   useEffect(() => {

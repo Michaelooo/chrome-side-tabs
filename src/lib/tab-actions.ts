@@ -3,6 +3,7 @@ import type { AssistantAction } from './assistant'
 import { ACTION_LABEL } from './assistant'
 import { stash } from './stash'
 import { restoreSessionId } from './recently-closed'
+import { HOST_ATTR } from './mode'
 
 export interface Shot {
   tabId: number
@@ -46,16 +47,66 @@ function sleep(ms: number) {
 async function captureVisible(tab: AppTab, onProgress?: Progress): Promise<Shot | null> {
   onProgress?.(`正在截图：${tab.title || tab.url}`)
   await chrome.tabs.update(tab.id, { active: true })
+  await toggleOwnUI(tab.id, true)
   await sleep(250)
   try {
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
     return { tabId: tab.id, title: tab.title || tab.url, dataUrl }
   } catch {
     return null
+  } finally {
+    await toggleOwnUI(tab.id, false)
   }
 }
 
 const SCROLLER_ATTR = 'data-sidetabs-scroller'
+
+/**
+ * 把扩展自己挂在页面上的界面藏起来。
+ *
+ * 内容脚本的宿主是 position:fixed 的，逐屏滚动截长图时会出现在每一屏里。
+ * 下面 scrollAndMask 那套页面 fixed 元素的遮罩救不了它，有两个原因：
+ * 宿主挂在 documentElement 上（body 的兄弟节点），不在 `body *` 的范围内；
+ * 而且那套遮罩第一屏是故意不生效的（要保留页头）。
+ * 扩展自己的界面不该出现在任何一屏，所以单独、无条件地藏。
+ */
+function setOwnUIHidden(attr: string, hidden: boolean) {
+  const marked = Array.from(document.querySelectorAll<HTMLElement>(`[${attr}]`))
+  // 内容脚本宿主直接挂在 documentElement 下，与标准的 head/body 同级。
+  // 扩展 reload 后旧宿主没有 attr，只按它独有的整屏 fixed + 最高层级组合识别。
+  const legacy = Array.from(document.documentElement.children)
+    .filter((el): el is HTMLElement => {
+      if (!(el instanceof HTMLElement)) return false
+      const s = el.style
+      return s.position === 'fixed'
+        && s.inset === '0px'
+        && s.pointerEvents === 'none'
+        && s.zIndex === '2147483647'
+    })
+
+  for (const el of new Set([...marked, ...legacy])) {
+    if (hidden) {
+      if (el.dataset.siftCaptureDisplay == null) {
+        el.dataset.siftCaptureDisplay = el.style.display || '__empty__'
+      }
+      el.style.display = 'none'
+    } else {
+      const display = el.dataset.siftCaptureDisplay
+      if (display == null) continue
+      el.style.display = display === '__empty__' ? '' : display
+      delete el.dataset.siftCaptureDisplay
+    }
+  }
+}
+
+/** 截图前后各调一次。页面注入不进去（chrome:// 等）就静默跳过 */
+async function toggleOwnUI(tabId: number, hidden: boolean) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: setOwnUIHidden,
+    args: [HOST_ATTR, hidden],
+  }).catch(() => undefined)
+}
 
 interface PageMetrics {
   /** 截图要裁的区域（视口坐标），文档滚动时就是整个视口 */
@@ -223,50 +274,56 @@ async function captureFullPage(
   if (!ctx) return captureVisible(tab, onProgress)
   ctx.imageSmoothingQuality = 'high'
 
+  // 整轮截图期间一直藏着，否则每一屏都会糊上一层我们自己的面板
+  await toggleOwnUI(tab.id, true)
+
   let captured = 0
-  for (let i = 0; i < steps; i++) {
-    onProgress?.(`正在截图 ${i + 1}/${steps} 屏`)
+  try {
+    for (let i = 0; i < steps; i++) {
+      onProgress?.(`正在截图 ${i + 1}/${steps} 屏`)
 
-    let actual = i * m.clientHeight
-    try {
-      const [res] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: scrollAndMask,
-        // 第一屏保留页头，之后藏掉，免得每屏都重复一条悬浮导航
-        args: [SCROLLER_ATTR, i * m.clientHeight, i > 0],
-      })
-      if (typeof res.result === 'number') actual = res.result
-    } catch { /* 滚不动就按理论位置画 */ }
+      let actual = i * m.clientHeight
+      try {
+        const [res] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: scrollAndMask,
+          // 第一屏保留页头，之后藏掉，免得每屏都重复一条悬浮导航
+          args: [SCROLLER_ATTR, i * m.clientHeight, i > 0],
+        })
+        if (typeof res.result === 'number') actual = res.result
+      } catch { /* 滚不动就按理论位置画 */ }
 
-    await sleep(CAPTURE_INTERVAL_MS)
+      await sleep(CAPTURE_INTERVAL_MS)
 
-    try {
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
-      const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob())
-      // 从整屏截图里裁出滚动容器那一块，按"实际滚到了多少"落到长图上。
-      // 用实际值而不是理论值，最后一屏没滚满时才不会错位或重影。
-      ctx.drawImage(
-        bitmap,
-        m.rect.x * m.dpr, m.rect.y * m.dpr,
-        m.rect.width * m.dpr, m.rect.height * m.dpr,
-        0, actual * m.dpr * scale,
-        m.rect.width * m.dpr * scale, m.rect.height * m.dpr * scale,
-      )
-      bitmap.close()
-      captured++
-    } catch {
-      break
+      try {
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+        const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob())
+        // 从整屏截图里裁出滚动容器那一块，按"实际滚到了多少"落到长图上。
+        // 用实际值而不是理论值，最后一屏没滚满时才不会错位或重影。
+        ctx.drawImage(
+          bitmap,
+          m.rect.x * m.dpr, m.rect.y * m.dpr,
+          m.rect.width * m.dpr, m.rect.height * m.dpr,
+          0, actual * m.dpr * scale,
+          m.rect.width * m.dpr * scale, m.rect.height * m.dpr * scale,
+        )
+        bitmap.close()
+        captured++
+      } catch {
+        break
+      }
+
+      // 已经滚到底了，再截也是重复
+      if (actual + m.clientHeight >= m.scrollHeight - 4) break
     }
-
-    // 已经滚到底了，再截也是重复
-    if (actual + m.clientHeight >= m.scrollHeight - 4) break
+  } finally {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: restorePage,
+      args: [SCROLLER_ATTR, m.originalScroll],
+    }).catch(() => undefined)
+    await toggleOwnUI(tab.id, false)
   }
-
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: restorePage,
-    args: [SCROLLER_ATTR, m.originalScroll],
-  }).catch(() => undefined)
 
   if (captured === 0) return captureVisible(tab, onProgress)
 
