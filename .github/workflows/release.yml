@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "要校验并打包的纯 SemVer 版本号，例如 0.1.0（手动运行只做 dry run，不会创建 Release）"
+        description: "要发布的纯 SemVer 版本号，例如 0.2.0（仅允许从 main 最新提交发布）"
         required: true
         type: string
 
@@ -28,25 +28,28 @@ jobs:
       NOTES_PATH: release-notes.md
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       # 不要传 version 输入，版本由 package.json 的 packageManager 字段决定
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
 
-      - name: Verify tag belongs to main
-        if: github.event_name == 'push'
+      - name: Verify release commit belongs to main
         run: |
           git fetch origin main --no-tags
           git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${GITHUB_SHA}" != "$(git rev-parse origin/main)" ]; then
+            echo "手动发布只能从 main 的最新提交执行"
+            exit 1
+          fi
 
       - name: Validate release metadata
         run: node scripts/validate-release.js "$VERSION" --notes="$NOTES_PATH"
@@ -68,32 +71,29 @@ jobs:
           cd release
           sha256sum "$(basename "$ZIP_PATH")" > "$(basename "$ZIP_PATH").sha256"
 
-      - name: Upload dry-run artifacts
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: chrome-side-tabs-v${{ inputs.version }}-dry-run
-          path: |
-            ${{ env.ZIP_PATH }}
-            ${{ env.ZIP_PATH }}.sha256
-            ${{ env.NOTES_PATH }}
-          if-no-files-found: error
-          retention-days: 7
-
       - name: Create or update GitHub Release
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if ! git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+            git tag "$VERSION" "$GITHUB_SHA"
+            git push origin "refs/tags/$VERSION"
+          elif [ "$(git rev-list -n 1 "$VERSION")" != "$GITHUB_SHA" ]; then
+            echo "标签 $VERSION 已存在，但不指向当前发布提交"
+            exit 1
+          fi
+
           if gh release view "$VERSION" >/dev/null 2>&1; then
             gh release edit "$VERSION" \
-              --title "Side Tabs $VERSION" \
-              --notes-file "$NOTES_PATH"
+              --title "Sift $VERSION" \
+              --notes-file "$NOTES_PATH" \
+              --latest
           else
             gh release create "$VERSION" \
               --verify-tag \
-              --title "Side Tabs $VERSION" \
-              --notes-file "$NOTES_PATH"
+              --title "Sift $VERSION" \
+              --notes-file "$NOTES_PATH" \
+              --latest
           fi
           gh release upload "$VERSION" \
             "$ZIP_PATH" \
