@@ -1,3 +1,4 @@
+import { HOST_ATTR } from '../lib/mode'
 import type { WhoAmI } from '../lib/mode'
 import { storage } from '../lib/storage'
 
@@ -22,6 +23,8 @@ const MAX_W = 360
 const MAX_H = 520
 
 const EXT_ORIGIN = new URL(chrome.runtime.getURL('')).origin
+// 扩展 reload 后，旧内容脚本的 chrome.runtime 会失效；提前缓存 URL，旧把手仍能挂载新版 iframe。
+const ORB_URL = chrome.runtime.getURL('orb.html')
 const SPRING = 'cubic-bezier(.2,.9,.25,1.15)'
 
 let host: HTMLDivElement | null = null
@@ -29,6 +32,12 @@ let shadow: ShadowRoot | null = null
 let handle: HTMLButtonElement | null = null
 let frame: HTMLIFrameElement | null = null
 let whoami: WhoAmI | null = null
+/**
+ * 面板收起时只是藏起来，不销毁 iframe——销毁等于把整个 React 应用连同对话一起扔掉，
+ * 每次展开都变成全新会话。藏起来则连滚动位置和输入框草稿都还在。
+ */
+let panelOpen = false
+let opening = false
 
 const STYLE = `
 /* 一块实体的深色片，不是一条要靠猜的细缝。
@@ -100,7 +109,14 @@ const STYLE = `
   border: 0; border-radius: 14px; background: #1c1c1c;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 20px 60px rgba(0,0,0,0.55);
   opacity: 0; pointer-events: auto;
-  transition: opacity 220ms ${SPRING}, transform 220ms ${SPRING};
+  /* 收起后要彻底不可交互，但 iframe 得留着。visibility 延到过渡结束再切，
+     展开时立即切——不然淡出还没跑完就先消失了 */
+  visibility: hidden;
+  transition: opacity 220ms ${SPRING}, transform 220ms ${SPRING}, visibility 0s 220ms;
+}
+.panel[data-in="1"] {
+  visibility: visible;
+  transition: opacity 220ms ${SPRING}, transform 220ms ${SPRING}, visibility 0s;
 }
 /* 把手点开的：从左边滑出，锚在把手旁边 */
 .panel[data-origin="handle"] { transform: translateX(-14px); }
@@ -131,6 +147,7 @@ function mount() {
   // all:initial 挡住页面样式（继承属性会穿透 shadow 边界），必须写在最前面。
   host.style.cssText =
     'all: initial; position: fixed; inset: 0; pointer-events: none; z-index: 2147483647;'
+  host.setAttribute(HOST_ATTR, '')
 
   shadow = host.attachShadow({ mode: 'closed' })
   const style = document.createElement('style')
@@ -154,6 +171,9 @@ function mount() {
 
 function unmount() {
   closePanel()
+  // 切回侧栏形态是真的要走了，这时才销毁 iframe
+  frame?.remove()
+  frame = null
   document.removeEventListener('click', onDocClick, true)
   document.removeEventListener('keydown', onKeyDown, true)
   document.removeEventListener('fullscreenchange', onFullscreen)
@@ -172,7 +192,7 @@ function onFullscreen() {
 }
 
 function onDocClick(e: MouseEvent) {
-  if (!frame || !host) return
+  if (!panelOpen || !host) return
   // 面板里的点击不会冒泡到页面（iframe 吞掉了），能走到这儿的都是面板外
   if (e.composedPath().includes(host)) return
   closePanel()
@@ -181,61 +201,91 @@ function onDocClick(e: MouseEvent) {
 function onKeyDown(e: KeyboardEvent) {
   // 面板打开时焦点通常在 iframe 里，ESC 由面板自己 postMessage 回来；
   // 这里兜住焦点还在页面上的情况
-  if (e.key === 'Escape' && frame) closePanel()
+  if (e.key === 'Escape' && panelOpen) closePanel()
 }
 
 async function togglePanel(origin: PanelOrigin) {
-  if (frame) closePanel()
+  if (panelOpen) closePanel()
   else await openPanel(origin)
 }
 
 async function openPanel(origin: PanelOrigin) {
-  if (!shadow || frame) return
+  if (!shadow || panelOpen || opening) return
 
-  // 面板要按窗口读写分组。内容脚本问不到自己的 tabId，
-  // 只有 service worker 能从 sender 拿到可信答案。
-  if (!whoami) {
-    try {
-      whoami = await chrome.runtime.sendMessage({ type: 'side-tabs:whoami' })
-    } catch {
-      return // 扩展上下文失效（刚重载过），下次再试
-    }
+  // 已经建过就直接复用，对话、滚动位置、输入框草稿全都还在
+  if (frame) {
+    panelOpen = true
+    layoutPanel(frame, origin)
+    handle?.setAttribute('data-open', '1')
+    frame.setAttribute('data-in', '1')
+    tellPanel({ visible: true })
+    return
   }
 
+  opening = true
+  try {
+    // whoami 只用于锁定窗口；取不到时也要先把面板打开，面板可自行回退到当前窗口。
+    if (!whoami) {
+      try {
+        whoami = await chrome.runtime.sendMessage({ type: 'side-tabs:whoami' })
+      } catch {
+        whoami = {}
+      }
+    }
+
+    if (!shadow || frame || panelOpen) return
+
+    const url = new URL(ORB_URL)
+    if (whoami?.windowId != null) url.searchParams.set('windowId', String(whoami.windowId))
+    if (whoami?.tabId != null) url.searchParams.set('tabId', String(whoami.tabId))
+
+    frame = document.createElement('iframe')
+    frame.className = 'panel'
+    frame.src = url.toString()
+    frame.addEventListener('load', () => tellPanel({ visible: panelOpen }), { once: true })
+    layoutPanel(frame, origin)
+
+    shadow.appendChild(frame)
+    panelOpen = true
+    handle?.setAttribute('data-open', '1')
+    // 下一帧再加 data-in，否则初始态和终态在同一帧，过渡不会跑
+    requestAnimationFrame(() => frame?.setAttribute('data-in', '1'))
+  } finally {
+    opening = false
+  }
+}
+
+/** 尺寸和位置每次展开都重算：窗口可能被缩放过，入口也可能换了 */
+function layoutPanel(el: HTMLIFrameElement, origin: PanelOrigin) {
   const width = Math.min(MAX_W, window.innerWidth - PANEL_GAP - 20)
   const height = Math.min(MAX_H, window.innerHeight - 80)
 
-  const url = new URL(chrome.runtime.getURL('orb.html'))
-  if (whoami?.windowId != null) url.searchParams.set('windowId', String(whoami.windowId))
-  if (whoami?.tabId != null) url.searchParams.set('tabId', String(whoami.tabId))
-
-  frame = document.createElement('iframe')
-  frame.className = 'panel'
-  frame.dataset.origin = origin
-  frame.src = url.toString()
-  frame.style.width = `${width}px`
-  frame.style.height = `${height}px`
+  el.dataset.origin = origin
+  el.style.width = `${width}px`
+  el.style.height = `${height}px`
 
   if (origin === 'handle') {
-    frame.style.left = `${PANEL_GAP}px`
-    frame.style.top = `${Math.max(24, (window.innerHeight - height) / 2)}px`
+    el.style.left = `${PANEL_GAP}px`
+    el.style.top = `${Math.max(24, (window.innerHeight - height) / 2)}px`
   } else {
     // 居中偏上：整屏正中会显得沉，偏上一点更像被召唤出来的
-    frame.style.left = '50%'
-    frame.style.top = `${Math.max(24, (window.innerHeight - height) * 0.32)}px`
+    el.style.left = '50%'
+    el.style.top = `${Math.max(24, (window.innerHeight - height) * 0.32)}px`
   }
+}
 
-  shadow.appendChild(frame)
-  handle?.setAttribute('data-open', '1')
-  // 下一帧再加 data-in，否则初始态和终态在同一帧，过渡不会跑
-  requestAnimationFrame(() => frame?.setAttribute('data-in', '1'))
+/** 面板藏起来时别再跟着标签事件空转——这个扩展自己就是管标签开销的 */
+function tellPanel(payload: { visible: boolean }) {
+  frame?.contentWindow?.postMessage({ source: 'sift-host', ...payload }, EXT_ORIGIN)
 }
 
 function closePanel() {
-  frame?.remove()
-  frame = null
+  if (!frame) return
+  panelOpen = false
+  frame.removeAttribute('data-in')
   handle?.removeAttribute('data-open')
   handle?.removeAttribute('data-busy')
+  tellPanel({ visible: false })
 }
 
 // 面板是 iframe，里面的事件出不来，收起和忙碌状态都得它自己喊
